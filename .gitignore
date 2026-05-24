@@ -22,6 +22,7 @@ wheels/
 
 # Virtual Environment
 venv/
+venv
 ENV/
 
 # Environment Variables
@@ -51,3 +52,7 @@ Thumbs.db
 
 # Frontend
 node_modules
+
+
+# DB
+hedge_fund.db

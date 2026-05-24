@@ -14,6 +14,8 @@ class PortfolioDecision(BaseModel):
     quantity: int = Field(description="Number of shares to trade")
     confidence: float = Field(description="Confidence in the decision, between 0.0 and 100.0")
     reasoning: str = Field(description="Reasoning for the decision")
+    risk_score: float = Field(default=5.0, description="Qualitative risk score between 1.0 (lowest risk) and 10.0 (highest risk)")
+    thesis: str = Field(default="", description="A 2-3 bullet point qualitative investment thesis for the stock")
 
 
 class PortfolioManagerOutput(BaseModel):
@@ -162,7 +164,9 @@ def generate_trading_decision(
                     "action": "buy/sell/short/cover/hold",
                     "quantity": integer,
                     "confidence": float between 0 and 100,
-                    "reasoning": "string"
+                    "reasoning": "string",
+                    "risk_score": float between 1.0 and 10.0,
+                    "thesis": "2-3 bullet point thesis"
                   }},
                   "TICKER2": {{
                     ...

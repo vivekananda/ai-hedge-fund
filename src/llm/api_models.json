@@ -88,5 +88,10 @@
     "display_name": "[openai] custom",
     "model_name": "-",
     "provider": "OpenAI"
+  },
+  {
+    "display_name": "[lmstudio] custom",
+    "model_name": "-",
+    "provider": "LMStudio"
   }
 ] 

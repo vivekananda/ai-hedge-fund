@@ -41,20 +41,20 @@ def fundamentals_agent(state: AgentState):
         progress.update_status("fundamentals_agent", ticker, "Analyzing profitability")
         # 1. Profitability Analysis
         return_on_equity = metrics.return_on_equity
-        net_margin = metrics.net_margin
+        roce = metrics.return_on_invested_capital
         operating_margin = metrics.operating_margin
 
         thresholds = [
             (return_on_equity, 0.15),  # Strong ROE above 15%
-            (net_margin, 0.20),  # Healthy profit margins
-            (operating_margin, 0.15),  # Strong operating efficiency
+            (roce, 0.15),  # Strong ROCE above 15%
+            (operating_margin, 0.12),  # Strong operating efficiency above 12%
         ]
         profitability_score = sum(metric is not None and metric > threshold for metric, threshold in thresholds)
 
         signals.append("bullish" if profitability_score >= 2 else "bearish" if profitability_score == 0 else "neutral")
         reasoning["profitability_signal"] = {
             "signal": signals[0],
-            "details": (f"ROE: {return_on_equity:.2%}" if return_on_equity else "ROE: N/A") + ", " + (f"Net Margin: {net_margin:.2%}" if net_margin else "Net Margin: N/A") + ", " + (f"Op Margin: {operating_margin:.2%}" if operating_margin else "Op Margin: N/A"),
+            "details": (f"ROE: {return_on_equity:.2%}" if return_on_equity else "ROE: N/A") + ", " + (f"ROCE: {roce:.2%}" if roce else "ROCE: N/A") + ", " + (f"Op Margin: {operating_margin:.2%}" if operating_margin else "Op Margin: N/A"),
         }
 
         progress.update_status("fundamentals_agent", ticker, "Analyzing growth")

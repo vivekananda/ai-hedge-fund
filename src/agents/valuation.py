@@ -133,7 +133,7 @@ def valuation_agent(state: AgentState):
                     "bearish" if vals["gap"] and vals["gap"] < -0.15 else "neutral"
                 ),
                 "details": (
-                    f"Value: ${vals['value']:,.2f}, Market Cap: ${market_cap:,.2f}, "
+                    f"Value: ₹{vals['value']:,.2f}, Market Cap: ₹{market_cap:,.2f}, "
                     f"Gap: {vals['gap']:.1%}, Weight: {vals['weight']*100:.0f}%"
                 ),
             }

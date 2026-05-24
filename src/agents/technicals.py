@@ -62,13 +62,17 @@ def technical_analyst_agent(state: AgentState):
         progress.update_status("technical_analyst_agent", ticker, "Statistical analysis")
         stat_arb_signals = calculate_stat_arb_signals(prices_df)
 
+        progress.update_status("technical_analyst_agent", ticker, "Calculating swing signals")
+        swing_signals = calculate_indian_swing_signals(prices_df)
+
         # Combine all signals using a weighted ensemble approach
         strategy_weights = {
-            "trend": 0.25,
-            "mean_reversion": 0.20,
-            "momentum": 0.25,
-            "volatility": 0.15,
-            "stat_arb": 0.15,
+            "trend": 0.20,
+            "mean_reversion": 0.15,
+            "momentum": 0.20,
+            "volatility": 0.10,
+            "stat_arb": 0.10,
+            "swing": 0.25,
         }
 
         progress.update_status("technical_analyst_agent", ticker, "Combining signals")
@@ -79,6 +83,7 @@ def technical_analyst_agent(state: AgentState):
                 "momentum": momentum_signals,
                 "volatility": volatility_signals,
                 "stat_arb": stat_arb_signals,
+                "swing": swing_signals,
             },
             strategy_weights,
         )
@@ -112,6 +117,11 @@ def technical_analyst_agent(state: AgentState):
                     "signal": stat_arb_signals["signal"],
                     "confidence": round(stat_arb_signals["confidence"] * 100),
                     "metrics": normalize_pandas(stat_arb_signals["metrics"]),
+                },
+                "indian_swing": {
+                    "signal": swing_signals["signal"],
+                    "confidence": round(swing_signals["confidence"] * 100),
+                    "metrics": normalize_pandas(swing_signals["metrics"]),
                 },
             },
         }
@@ -509,3 +519,73 @@ def calculate_hurst_exponent(price_series: pd.Series, max_lag: int = 20) -> floa
     except (ValueError, RuntimeWarning):
         # Return 0.5 (random walk) if calculation fails
         return 0.5
+
+
+def calculate_sma(df: pd.DataFrame, window: int) -> pd.Series:
+    """Calculate Simple Moving Average."""
+    return df["close"].rolling(window=window).mean()
+
+
+def calculate_macd(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """Calculate MACD (12, 26, 9). Returns (macd_line, signal_line)."""
+    ema_12 = df["close"].ewm(span=12, adjust=False).mean()
+    ema_26 = df["close"].ewm(span=26, adjust=False).mean()
+    macd_line = ema_12 - ema_26
+    signal_line = macd_line.ewm(span=9, adjust=False).mean()
+    return macd_line, signal_line
+
+
+def calculate_indian_swing_signals(df: pd.DataFrame) -> dict:
+    """
+    Computes swing trading signals tailored to the Indian market:
+    - Price above 44 SMA
+    - RSI 14 in bullish zone (>50)
+    - MACD Line above Signal Line
+    """
+    # 44 SMA
+    sma_44 = calculate_sma(df, 44)
+    price_above_44 = df["close"].iloc[-1] > sma_44.iloc[-1]
+
+    # RSI 14
+    rsi = calculate_rsi(df, 14)
+    rsi_val = rsi.iloc[-1]
+
+    # MACD
+    macd_line, signal_line = calculate_macd(df)
+    macd_val = macd_line.iloc[-1]
+    sig_val = signal_line.iloc[-1]
+    macd_bullish = macd_val > sig_val
+
+    # Scoring
+    score = 0
+    if price_above_44:
+        score += 1
+    if rsi_val > 50:
+        score += 1
+    if macd_bullish:
+        score += 1
+
+    if score == 3:
+        signal = "bullish"
+        confidence = 0.85
+    elif score == 2:
+        signal = "bullish" if price_above_44 else "neutral"
+        confidence = 0.65
+    elif score <= 1:
+        signal = "bearish" if not price_above_44 and rsi_val < 40 else "neutral"
+        confidence = 0.60
+    else:
+        signal = "neutral"
+        confidence = 0.50
+
+    return {
+        "signal": signal,
+        "confidence": confidence,
+        "metrics": {
+            "price_above_44_sma": bool(price_above_44),
+            "rsi_14": float(rsi_val),
+            "macd_line": float(macd_val),
+            "macd_signal_line": float(sig_val),
+            "macd_bullish": bool(macd_bullish)
+        }
+    }

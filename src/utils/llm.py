@@ -9,6 +9,8 @@ from src.utils.progress import progress
 T = TypeVar("T", bound=BaseModel)
 
 
+import os
+
 def call_llm(
     prompt: Any,
     model_name: str,
@@ -33,12 +35,40 @@ def call_llm(
     Returns:
         An instance of the specified Pydantic model
     """
+    # Check if we have a valid API key for the selected provider
+    has_valid_key = True
+    if model_provider == "OpenAI":
+        key = os.getenv("OPENAI_API_KEY")
+        if not key or "your-openai" in key or "your-api" in key: has_valid_key = False
+    elif model_provider == "Gemini":
+        key = os.getenv("GOOGLE_API_KEY")
+        if not key or "your-google" in key or "your-api" in key: has_valid_key = False
+    elif model_provider == "Groq":
+        key = os.getenv("GROQ_API_KEY")
+        if not key or "your-groq" in key or "your-api" in key: has_valid_key = False
+    elif model_provider == "Anthropic":
+        key = os.getenv("ANTHROPIC_API_KEY")
+        if not key or "your-anthropic" in key or "your-api" in key: has_valid_key = False
+    elif model_provider == "DeepSeek":
+        key = os.getenv("DEEPSEEK_API_KEY")
+        if not key or "your-deepseek" in key or "your-api" in key: has_valid_key = False
+
+    if not has_valid_key and model_provider not in ["Ollama", "LMStudio"]:
+        if default_factory:
+            return default_factory()
+        return create_default_response(pydantic_model)
 
     model_info = get_model_info(model_name, model_provider)
     llm = get_model(model_name, model_provider)
 
-    # For non-JSON support models, we can use structured output
-    if not (model_info and not model_info.has_json_mode()):
+    # Determine if we should use structured JSON mode
+    use_json_mode = True
+    if model_provider in ["Gemini", "DeepSeek", "LMStudio"]:
+        use_json_mode = False
+    elif model_info and not model_info.has_json_mode():
+        use_json_mode = False
+
+    if use_json_mode:
         llm = llm.with_structured_output(
             pydantic_model,
             method="json_mode",
@@ -51,10 +81,18 @@ def call_llm(
             result = llm.invoke(prompt)
 
             # For non-JSON support models, we need to extract and parse the JSON manually
-            if model_info and not model_info.has_json_mode():
+            if not use_json_mode:
                 parsed_result = extract_json_from_response(result.content)
+                if not parsed_result:
+                    try:
+                        import json
+                        parsed_result = json.loads(result.content.strip())
+                    except Exception:
+                        pass
                 if parsed_result:
                     return pydantic_model(**parsed_result)
+                else:
+                    raise ValueError(f"Could not parse response content as JSON: {result.content}")
             else:
                 return result
 

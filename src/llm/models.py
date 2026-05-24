@@ -21,6 +21,7 @@ class ModelProvider(str, Enum):
     GROQ = "Groq"
     OPENAI = "OpenAI"
     OLLAMA = "Ollama"
+    LMSTUDIO = "LMStudio"
 
 
 class LLMModel(BaseModel):
@@ -40,7 +41,7 @@ class LLMModel(BaseModel):
 
     def has_json_mode(self) -> bool:
         """Check if the model supports JSON mode"""
-        if self.is_deepseek() or self.is_gemini():
+        if self.is_deepseek() or self.is_gemini() or self.provider == ModelProvider.LMSTUDIO:
             return False
         # Only certain Ollama models support JSON mode
         if self.is_ollama():
@@ -146,4 +147,11 @@ def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | Ch
         return ChatOllama(
             model=model_name,
             base_url=base_url,
+        )
+    elif model_provider == ModelProvider.LMSTUDIO:
+        base_url = os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
+        return ChatOpenAI(
+            model=model_name,
+            base_url=base_url,
+            api_key="lm-studio"
         )
