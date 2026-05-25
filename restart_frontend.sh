@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PORT=5173
+PORT=5178
 echo "Attempting to restart frontend on port $PORT..."
 
 # Find and kill any process running on the port

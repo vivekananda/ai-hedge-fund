@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PORT=8000
+PORT=8008
 echo "Attempting to restart backend on port $PORT..."
 
 # Find and kill any process running on the port

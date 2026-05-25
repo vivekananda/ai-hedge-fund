@@ -92,9 +92,9 @@ npm run dev
 ```
 
 You can now access:
-- Frontend application: http://localhost:5173
-- Backend API: http://localhost:8000
-- API Documentation: http://localhost:8000/docs
+- Frontend application: http://localhost:5178
+- Backend API: http://localhost:8008
+- API Documentation: http://localhost:8008/docs
 
 ## Detailed Documentation
 
