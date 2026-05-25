@@ -235,27 +235,42 @@ def search_line_items(
             if outstanding_shares == 0.0:
                 outstanding_shares = t_obj.info.get("sharesOutstanding") or 1e8
 
-            # Build line item attributes dynamically
+            # Extract additional fields
+            revenue = extract(financials, ["Total Revenue", "TotalRevenue", "Revenue", "Operating Revenue"])
+            gross_profit = extract(financials, ["Gross Profit", "GrossProfit"])
+            operating_income = extract(financials, ["Operating Income", "OperatingIncome", "Operating Income Or Loss"])
+            rd = extract(financials, ["Research And Development", "ResearchAndDevelopment", "Research & Development"])
+            opex = extract(financials, ["Operating Expense", "OperatingExpense", "Total Operating Expenses"])
+            total_debt = extract(balance_sheet, ["Total Debt", "TotalDebt"])
+            equity = extract(balance_sheet, ["Stockholders Equity", "Total Stockholders Equity", "Total Equity"])
+            
+            gross_margin = gross_profit / revenue if revenue != 0.0 else 0.0
+            operating_margin = operating_income / revenue if revenue != 0.0 else 0.0
+            debt_to_equity = total_debt / equity if equity != 0.0 else 0.0
+
+            # Build line item
             li = LineItem(
                 ticker=formatted_ticker,
                 report_period=report_date,
                 period="annual",
-                currency="INR"
+                currency="INR",
+                free_cash_flow=fcf,
+                net_income=net_income,
+                depreciation_and_amortization=depr,
+                capital_expenditure=capex,
+                working_capital=working_cap,
+                outstanding_shares=outstanding_shares,
+                total_assets=curr_assets,
+                total_liabilities=curr_liabs,
+                revenue=revenue,
+                gross_margin=gross_margin,
+                operating_margin=operating_margin,
+                debt_to_equity=debt_to_equity,
+                research_and_development=rd,
+                operating_expense=opex,
+                dividends_and_other_cash_distributions=extract(cashflow, ["Cash Dividends Paid", "Dividend Paid"]),
+                issuance_or_purchase_of_equity_shares=extract(cashflow, ["Repurchase Of Capital Stock", "Common Stock Issuance"])
             )
-            # Add dynamic fields
-            li.__dict__["free_cash_flow"] = fcf
-            li.__dict__["net_income"] = net_income
-            li.__dict__["depreciation_and_amortization"] = depr
-            li.__dict__["capital_expenditure"] = capex
-            li.__dict__["working_capital"] = working_cap
-            li.__dict__["outstanding_shares"] = outstanding_shares
-            li.__dict__["total_assets"] = curr_assets
-            li.__dict__["total_liabilities"] = curr_liabs
-            
-            # Additional fields to keep valuation_agent happy
-            li.__dict__["dividends_and_other_cash_distributions"] = extract(cashflow, ["Cash Dividends Paid", "Dividend Paid"])
-            li.__dict__["issuance_or_purchase_of_equity_shares"] = extract(cashflow, ["Repurchase Of Capital Stock", "Common Stock Issuance"])
-            
             results.append(li)
             
         return results
@@ -278,18 +293,18 @@ def search_line_items(
                 ticker=formatted_ticker,
                 report_period=date_str,
                 period="annual",
-                currency="INR"
+                currency="INR",
+                free_cash_flow=fcf,
+                net_income=net_inc,
+                depreciation_and_amortization=net_inc * 0.15,
+                capital_expenditure=net_inc * 0.20,
+                working_capital=mcap * 0.10 + (i * 1e7),
+                outstanding_shares=1e7,
+                total_assets=mcap * 0.8,
+                total_liabilities=mcap * 0.3,
+                dividends_and_other_cash_distributions=-net_inc * 0.2,
+                issuance_or_purchase_of_equity_shares=0.0
             )
-            li.__dict__["free_cash_flow"] = fcf
-            li.__dict__["net_income"] = net_inc
-            li.__dict__["depreciation_and_amortization"] = net_inc * 0.15
-            li.__dict__["capital_expenditure"] = net_inc * 0.20
-            li.__dict__["working_capital"] = mcap * 0.10 + (i * 1e7)
-            li.__dict__["outstanding_shares"] = 1e7
-            li.__dict__["total_assets"] = mcap * 0.8
-            li.__dict__["total_liabilities"] = mcap * 0.3
-            li.__dict__["dividends_and_other_cash_distributions"] = -net_inc * 0.2
-            li.__dict__["issuance_or_purchase_of_equity_shares"] = 0.0
             results.append(li)
         return results
 

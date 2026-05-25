@@ -439,11 +439,11 @@ def analyze_predictability(financial_line_items: list) -> dict:
     
     # 1. Revenue stability and growth
     revenues = [item.revenue for item in financial_line_items 
-               if hasattr(item, 'revenue') and item.revenue is not None]
+               if hasattr(item, 'revenue') and item.revenue is not None and item.revenue != 0.0]
     
     if revenues and len(revenues) >= 5:
         # Calculate year-over-year growth rates
-        growth_rates = [(revenues[i] / revenues[i+1] - 1) for i in range(len(revenues)-1)]
+        growth_rates = [(revenues[i] / revenues[i+1] - 1) for i in range(len(revenues)-1) if revenues[i+1] != 0.0]
         
         avg_growth = sum(growth_rates) / len(growth_rates)
         growth_volatility = sum(abs(r - avg_growth) for r in growth_rates) / len(growth_rates)
@@ -579,7 +579,7 @@ def calculate_munger_valuation(financial_line_items: list, market_cap: float) ->
         }
     
     # 2. Calculate FCF yield (inverse of P/FCF multiple)
-    fcf_yield = normalized_fcf / market_cap
+    fcf_yield = normalized_fcf / market_cap if market_cap != 0.0 else 0.0
     
     # 3. Apply Munger's FCF multiple based on business quality
     # Munger would pay higher multiples for wonderful businesses
@@ -603,7 +603,7 @@ def calculate_munger_valuation(financial_line_items: list, market_cap: float) ->
     optimistic_value = normalized_fcf * 20    # 20x FCF = 5% yield
     
     # 5. Calculate margins of safety
-    current_to_reasonable = (reasonable_value - market_cap) / market_cap
+    current_to_reasonable = (reasonable_value - market_cap) / market_cap if market_cap != 0.0 else 0.0
     
     if current_to_reasonable > 0.3:  # >30% upside
         score += 3

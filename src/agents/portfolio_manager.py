@@ -3,10 +3,11 @@ from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 
 from src.graph.state import AgentState, show_agent_reasoning
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
+
 
 
 class PortfolioDecision(BaseModel):
@@ -16,6 +17,14 @@ class PortfolioDecision(BaseModel):
     reasoning: str = Field(description="Reasoning for the decision")
     risk_score: float = Field(default=5.0, description="Qualitative risk score between 1.0 (lowest risk) and 10.0 (highest risk)")
     thesis: str = Field(default="", description="A 2-3 bullet point qualitative investment thesis for the stock")
+
+    @field_validator("thesis", mode="before")
+    @classmethod
+    def thesis_to_string(cls, v):
+        if isinstance(v, list):
+            return "\n".join(f"- {item}" for item in v)
+        return v
+
 
 
 class PortfolioManagerOutput(BaseModel):

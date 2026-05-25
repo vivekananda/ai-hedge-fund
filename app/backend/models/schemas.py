@@ -29,3 +29,32 @@ class HedgeFundRequest(BaseModel):
         if self.start_date:
             return self.start_date
         return (datetime.strptime(self.end_date, "%Y-%m-%d") - timedelta(days=90)).strftime("%Y-%m-%d")
+
+
+class StockFundamental(BaseModel):
+    as_of_date: Optional[str] = None
+    market_cap: Optional[float] = None
+    pe_ratio: Optional[float] = None
+    pb_ratio: Optional[float] = None
+    roe: Optional[float] = None
+    roce: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+    sales_growth_3yr: Optional[float] = None
+
+
+class StockResponse(BaseModel):
+    symbol: str
+    name: str
+    sector: Optional[str] = None
+    performance_1y: Optional[float] = None
+    fundamentals: Optional[StockFundamental] = None
+
+
+class StockPrice(BaseModel):
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+

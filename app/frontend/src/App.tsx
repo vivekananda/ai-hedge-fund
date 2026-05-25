@@ -1,18 +1,17 @@
 import { useState } from 'react';
-import { Flow } from './components/flow';
-import { Layout } from './components/layout';
-
+import { Flow } from './components/Flow';
+import { Layout } from './components/Layout';
+import { Screener } from './components/screener';
 
 export default function App() {
-  const [showLeftSidebar] = useState(false);
-  const [showRightSidebar] = useState(false);
+  const [activeTab, setActiveTab] = useState<'simulation' | 'screener'>('simulation');
 
   return (
     <Layout
-      leftSidebar={showLeftSidebar ? <div className="p-4 text-white">Left Sidebar Content</div> : undefined}
-      rightSidebar={showRightSidebar ? <div className="p-4 text-white">Right Sidebar Content</div> : undefined}
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
     >
-      <Flow />
+      {activeTab === 'simulation' ? <Flow /> : <Screener />}
     </Layout>
   );
 }

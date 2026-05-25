@@ -1,4 +1,6 @@
 from pydantic import BaseModel
+from typing import Any
+
 
 
 class Price(BaseModel):
@@ -71,8 +73,37 @@ class LineItem(BaseModel):
     period: str
     currency: str
 
+    # Common financial fields declared explicitly to support direct attribute access
+    revenue: float | None = None
+    net_income: float | None = None
+    depreciation_and_amortization: float | None = None
+    capital_expenditure: float | None = None
+    free_cash_flow: float | None = None
+    working_capital: float | None = None
+    outstanding_shares: float | None = None
+    total_assets: float | None = None
+    total_liabilities: float | None = None
+    gross_margin: float | None = None
+    operating_margin: float | None = None
+    debt_to_equity: float | None = None
+    research_and_development: float | None = None
+    operating_expense: float | None = None
+    dividends_and_other_cash_distributions: float | None = None
+    issuance_or_purchase_of_equity_shares: float | None = None
+    earnings_per_share: float | None = None
+    book_value_per_share: float | None = None
+    current_assets: float | None = None
+    current_liabilities: float | None = None
+
     # Allow additional fields dynamically
     model_config = {"extra": "allow"}
+
+    def __getattr__(self, name: str) -> Any:
+        # Avoid infinite recursion during pydantic setup
+        if name.startswith("__") or name.startswith("model_"):
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        return None
+
 
 
 class LineItemResponse(BaseModel):
