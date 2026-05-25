@@ -1,7 +1,7 @@
 export interface ModelItem {
   display_name: string;
   model_name: string;
-  provider: "Anthropic" | "DeepSeek" | "Gemini" | "Groq" | "OpenAI";
+  provider: "Anthropic" | "DeepSeek" | "Gemini" | "Groq" | "OpenAI" | "LMStudio";
 }
 
 export const apiModels: ModelItem[] = [
@@ -64,6 +64,11 @@ export const apiModels: ModelItem[] = [
     "display_name": "o4-mini",
     "model_name": "o4-mini",
     "provider": "OpenAI"
+  },
+  {
+    "display_name": "google/gemma-4-e4b",
+    "model_name": "google/gemma-4-e4b",
+    "provider": "LMStudio"
   }
 ];
 

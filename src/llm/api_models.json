@@ -90,6 +90,11 @@
     "provider": "OpenAI"
   },
   {
+    "display_name": "[lmstudio] google/gemma-4-e4b",
+    "model_name": "google/gemma-4-e4b",
+    "provider": "LMStudio"
+  },
+  {
     "display_name": "[lmstudio] custom",
     "model_name": "-",
     "provider": "LMStudio"
