@@ -28,6 +28,7 @@ class RunPipelineRequest(BaseModel):
     model_name: Optional[str] = "gemini-2.0-flash"
     model_provider: Optional[str] = "Gemini"
     test_mode: Optional[bool] = False
+    watchlist_name: Optional[str] = "Nifty 500"
 
 
 class WeeklyPickResponse(BaseModel):
@@ -47,13 +48,21 @@ class WeeklyRunResponse(BaseModel):
     error_message: Optional[str] = None
     test_mode: bool
     created_at: str
+    watchlist_name: Optional[str] = None
 
 
 @router.get("/dates", response_model=List[str])
-def get_picks_dates(db: Session = Depends(get_db)):
+def get_picks_dates(watchlist_name: Optional[str] = "Nifty 500", db: Session = Depends(get_db)):
     """Retrieve all unique dates for which weekly picks exist."""
     try:
-        dates = db.query(WeeklyPick.week_start_date).distinct().all()
+        if watchlist_name == "Nifty 500":
+            dates = db.query(WeeklyPick.week_start_date).filter(
+                (WeeklyPick.watchlist_name == "Nifty 500") | (WeeklyPick.watchlist_name == None)
+            ).distinct().all()
+        else:
+            dates = db.query(WeeklyPick.week_start_date).filter(
+                WeeklyPick.watchlist_name == watchlist_name
+            ).distinct().all()
         # Sort descending
         return sorted([d[0] for d in dates if d[0]], reverse=True)
     except Exception as e:
@@ -61,10 +70,10 @@ def get_picks_dates(db: Session = Depends(get_db)):
 
 
 @router.get("/picks/{date}", response_model=List[WeeklyPickResponse])
-def get_picks_by_date(date: str, db: Session = Depends(get_db)):
+def get_picks_by_date(date: str, watchlist_name: Optional[str] = "Nifty 500", db: Session = Depends(get_db)):
     """Retrieve all weekly stock picks for a specific date."""
     try:
-        picks = get_weekly_picks(db, date)
+        picks = get_weekly_picks(db, date, watchlist_name=watchlist_name)
         response = []
         for p in picks:
             # Join with Stock to get name
@@ -99,14 +108,15 @@ def get_recent_runs(db: Session = Depends(get_db)):
                 status=r.status,
                 error_message=r.error_message,
                 test_mode=r.test_mode,
-                created_at=r.created_at
+                created_at=r.created_at,
+                watchlist_name=r.watchlist_name or "Nifty 500"
             ) for r in runs
         ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching runs: {str(e)}")
 
 
-def run_pipeline_wrapper(run_id: int, model_name: str, model_provider: str, test_mode: bool):
+def run_pipeline_wrapper(run_id: int, model_name: str, model_provider: str, test_mode: bool, watchlist_name: str = "Nifty 500"):
     """Wrapper function to execute the weekly picks pipeline in the background and update database state."""
     db = SessionLocal()
     try:
@@ -115,7 +125,7 @@ def run_pipeline_wrapper(run_id: int, model_name: str, model_provider: str, test
         
         # Import the weekly pipeline function
         from pipelines.weekly_top10 import run_weekly_pipeline
-        run_weekly_pipeline(model_name=model_name, model_provider=model_provider, test_mode=test_mode)
+        run_weekly_pipeline(model_name=model_name, model_provider=model_provider, test_mode=test_mode, watchlist_name=watchlist_name)
         
         # Mark as completed
         update_weekly_run(db, run_id, "COMPLETED")
@@ -147,7 +157,8 @@ def trigger_pipeline(request: RunPipelineRequest, background_tasks: BackgroundTa
             run_date=today_str,
             status="PENDING",
             test_mode=request.test_mode,
-            created_at=created_at_str
+            created_at=created_at_str,
+            watchlist_name=request.watchlist_name
         )
         
         # Enqueue the background task
@@ -156,7 +167,8 @@ def trigger_pipeline(request: RunPipelineRequest, background_tasks: BackgroundTa
             run_id=run_record.id,
             model_name=request.model_name,
             model_provider=request.model_provider,
-            test_mode=request.test_mode
+            test_mode=request.test_mode,
+            watchlist_name=request.watchlist_name
         )
         
         return WeeklyRunResponse(
@@ -165,7 +177,8 @@ def trigger_pipeline(request: RunPipelineRequest, background_tasks: BackgroundTa
             status=run_record.status,
             error_message=None,
             test_mode=run_record.test_mode,
-            created_at=run_record.created_at
+            created_at=run_record.created_at,
+            watchlist_name=run_record.watchlist_name
         )
     except HTTPException as e:
         raise e

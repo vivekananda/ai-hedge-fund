@@ -12,6 +12,13 @@ export interface HedgeFundRequest {
   margin_requirement?: number;
 }
 
+export interface Watchlist {
+  id: number;
+  name: string;
+  tickers: string[];
+  created_at: string;
+}
+
 export interface WeeklyPick {
   rank: number;
   symbol: string;
@@ -29,6 +36,7 @@ export interface WeeklyRun {
   error_message?: string;
   test_mode: boolean;
   created_at: string;
+  watchlist_name?: string;
 }
 
 export interface SimulationRunMetadata {
@@ -167,6 +175,7 @@ export const api = {
                     case 'error':
                       // Mark all agents as error when there's an error
                       nodeContext.updateAgentNodes(params.selected_agents || [], 'ERROR');
+                      nodeContext.setError(eventData.message || 'Simulation analysis failed.');
                       break;
                     default:
                       console.warn('Unknown event type:', eventType);
@@ -183,6 +192,7 @@ export const api = {
             // Mark all agents as error when there's a connection error
             const agentIds = params.selected_agents || [];
             nodeContext.updateAgentNodes(agentIds, 'ERROR');
+            nodeContext.setError(error.message || 'Error processing analysis stream.');
           }
         }
       };
@@ -196,6 +206,7 @@ export const api = {
         // Mark all agents as error when there's a connection error
         const agentIds = params.selected_agents || [];
         nodeContext.updateAgentNodes(agentIds, 'ERROR');
+        nodeContext.setError(error.message || 'Failed to connect to simulation server.');
       }
     });
 
@@ -206,14 +217,20 @@ export const api = {
   },
 
   // Weekly picks endpoints
-  getWeeklyPicksDates: async (): Promise<string[]> => {
-    const res = await fetch(`${API_BASE_URL}/weekly-picks/dates`);
+  getWeeklyPicksDates: async (watchlistName?: string): Promise<string[]> => {
+    const url = watchlistName 
+      ? `${API_BASE_URL}/weekly-picks/dates?watchlist_name=${encodeURIComponent(watchlistName)}`
+      : `${API_BASE_URL}/weekly-picks/dates`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to fetch weekly picks dates');
     return res.json();
   },
 
-  getWeeklyPicks: async (date: string): Promise<WeeklyPick[]> => {
-    const res = await fetch(`${API_BASE_URL}/weekly-picks/picks/${date}`);
+  getWeeklyPicks: async (date: string, watchlistName?: string): Promise<WeeklyPick[]> => {
+    const url = watchlistName
+      ? `${API_BASE_URL}/weekly-picks/picks/${date}?watchlist_name=${encodeURIComponent(watchlistName)}`
+      : `${API_BASE_URL}/weekly-picks/picks/${date}`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to fetch weekly picks for ${date}`);
     return res.json();
   },
@@ -224,7 +241,7 @@ export const api = {
     return res.json();
   },
 
-  runWeeklyPipeline: async (modelName: string, modelProvider: string, testMode: boolean): Promise<WeeklyRun> => {
+  runWeeklyPipeline: async (modelName: string, modelProvider: string, testMode: boolean, watchlistName: string): Promise<WeeklyRun> => {
     const res = await fetch(`${API_BASE_URL}/weekly-picks/run`, {
       method: 'POST',
       headers: {
@@ -234,6 +251,7 @@ export const api = {
         model_name: modelName,
         model_provider: modelProvider,
         test_mode: testMode,
+        watchlist_name: watchlistName,
       }),
     });
     if (!res.ok) {
@@ -261,6 +279,39 @@ export const api = {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error(`Failed to delete simulation run ${runId}`);
+    return res.json();
+  },
+
+  // Watchlist endpoints
+  getWatchlists: async (): Promise<Watchlist[]> => {
+    const res = await fetch(`${API_BASE_URL}/watchlists`);
+    if (!res.ok) throw new Error('Failed to fetch watchlists');
+    return res.json();
+  },
+
+  saveWatchlist: async (name: string, tickers: string[]): Promise<Watchlist> => {
+    const res = await fetch(`${API_BASE_URL}/watchlists`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name, tickers }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'Failed to save watchlist');
+    }
+    return res.json();
+  },
+
+  deleteWatchlist: async (name: string): Promise<{ message: string }> => {
+    const res = await fetch(`${API_BASE_URL}/watchlists/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || `Failed to delete watchlist ${name}`);
+    }
     return res.json();
   },
 }; 

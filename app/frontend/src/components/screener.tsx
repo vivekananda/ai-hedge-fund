@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, ChevronRight, X, Loader2, TrendingUp, TrendingDown, Activity, Plus } from 'lucide-react';
+import { Search, ChevronRight, X, Loader2, TrendingUp, TrendingDown, Activity, Plus, PlusCircle, MinusCircle, ListPlus, Trash2, Play, Settings } from 'lucide-react';
+import { useWatchlist } from '@/contexts/watchlist-context';
+import { ModelSelector } from './ui/llm-selector';
+import { apiModels } from '@/data/models';
 
 interface StockFundamental {
   as_of_date: string | null;
@@ -55,6 +58,29 @@ export function Screener() {
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const [pricesLoading, setPricesLoading] = useState(false);
   const [chartHoverIndex, setChartHoverIndex] = useState<number | null>(null);
+
+  // Watchlist states
+  const {
+    watchlists,
+    activeWatchlistName,
+    activeWatchlist,
+    selectedModel,
+    setSelectedModel,
+    setActiveTab,
+    setSimulationTickers,
+    setPendingAutoRun,
+    createWatchlist,
+    deleteWatchlist,
+    setActiveWatchlistName,
+    addTickerToActive,
+    removeTickerFromActive,
+    isInActiveWatchlist,
+    runSimulationOnActive
+  } = useWatchlist();
+
+  const [isCreatingList, setIsCreatingList] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
   
   // Fetch stocks on mount
   useEffect(() => {
@@ -109,8 +135,6 @@ export function Screener() {
     });
     return ['All', ...Array.from(s).sort()];
   }, [stocks]);
-
-
 
   // Filter and sort stocks
   const filteredStocks = useMemo(() => {
@@ -186,7 +210,6 @@ export function Screener() {
   // Formatter utilities
   const formatMarketCap = (cap: number | null) => {
     if (!cap) return '—';
-    // cap is in Crores. If > 100,000, format in Lakh Crores
     if (cap >= 100000) {
       return `₹${(cap / 100000).toFixed(2)} L Cr`;
     }
@@ -237,7 +260,6 @@ export function Screener() {
     // Construct SVG Line Path
     let linePath = `M ${points[0].x} ${points[0].y}`;
     for (let i = 1; i < points.length; i++) {
-      // Use bezier curve helper for smooth lines
       const prev = points[i - 1];
       const curr = points[i];
       const cpX1 = prev.x + (curr.x - prev.x) / 2;
@@ -247,7 +269,6 @@ export function Screener() {
       linePath += ` C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${curr.x} ${curr.y}`;
     }
     
-    // Construct SVG Area Path (closes the shape at the bottom)
     const areaPath = `${linePath} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`;
     
     return {
@@ -270,7 +291,6 @@ export function Screener() {
     const rect = chartRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     
-    // Find closest index based on x coordinate
     const points = renderSVGChart.points;
     let closestIdx = 0;
     let minDiff = Infinity;
@@ -288,6 +308,29 @@ export function Screener() {
 
   const handleMouseLeave = () => {
     setChartHoverIndex(null);
+  };
+
+  const handleCreateList = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateError(null);
+    try {
+      await createWatchlist(newListName);
+      setNewListName('');
+      setIsCreatingList(false);
+    } catch (err: any) {
+      setCreateError(err.message || 'Failed to create watchlist');
+    }
+  };
+
+  const handleDeleteActiveList = async () => {
+    if (!activeWatchlistName) return;
+    if (confirm(`Are you sure you want to delete the watchlist "${activeWatchlistName}"?`)) {
+      try {
+        await deleteWatchlist(activeWatchlistName);
+      } catch (err: any) {
+        alert(err.message || 'Failed to delete watchlist');
+      }
+    }
   };
 
   return (
@@ -430,7 +473,6 @@ export function Screener() {
             </div>
           </div>
 
-          {/* Reset Filters button */}
           <div className="flex items-center gap-2 self-end md:self-auto text-xs text-gray-400">
             <span>Showing {filteredStocks.length} of {stocks.length}</span>
           </div>
@@ -457,94 +499,249 @@ export function Screener() {
           </div>
         )}
 
-        {/* Interactive Stock Grid Cards */}
+        {/* Interactive Stock Grid Cards & Watchlist Panel */}
         {!loading && !error && (
-          <div className="flex-1 flex flex-col justify-between">
-            {filteredStocks.length === 0 ? (
-              <div className="text-center py-20 text-gray-400 text-sm">
-                No stocks match your active screen filters.
-              </div>
-            ) : (
-              <div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {paginatedStocks.map(stock => {
-                    const isPositive = (stock.performance_1y || 0) >= 0;
-                    return (
-                      <div
-                        key={stock.symbol}
-                        onClick={() => setSelectedStock(stock)}
-                        className={`bg-ramp-grey-900 border ${selectedStock?.symbol === stock.symbol ? 'border-cyan-500 shadow-cyan-500/5 ring-1 ring-cyan-500/20' : 'border-ramp-grey-800 hover:border-ramp-grey-700'} rounded-xl p-4 transition-all duration-200 cursor-pointer hover:shadow-lg flex flex-col justify-between h-40`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <span className="text-white font-bold tracking-tight text-sm">
-                              {stock.symbol.replace('.NS', '')}
-                            </span>
-                            <h4 className="text-gray-400 text-[10px] font-medium truncate max-w-[140px] mt-0.5">
-                              {stock.name}
-                            </h4>
-                          </div>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPositive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                            {formatPercent(stock.performance_1y)}
-                          </span>
-                        </div>
-
-                        <div className="flex flex-col gap-1 border-t border-ramp-grey-950 pt-2 mt-2">
-                          <div className="flex justify-between text-[10px] text-gray-400">
-                            <span>Market Cap</span>
-                            <span className="font-semibold text-gray-300">
-                              {formatMarketCap(stock.fundamentals?.market_cap ?? null)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-[10px] text-gray-400">
-                            <span>P/E Ratio</span>
-                            <span className="font-semibold text-gray-300">
-                              {stock.fundamentals?.pe_ratio ? stock.fundamentals.pe_ratio.toFixed(1) : '—'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-[10px] text-gray-400">
-                            <span>ROE %</span>
-                            <span className="font-semibold text-gray-300">
-                              {stock.fundamentals?.roe ? `${stock.fundamentals.roe.toFixed(1)}%` : '—'}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[9px] text-gray-500 mt-2">
-                          <span>{stock.sector || 'Unassigned'}</span>
-                          <span className="text-cyan-400 font-semibold flex items-center gap-0.5 hover:underline">
-                            View details <ChevronRight size={10} />
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
+          <div className="flex-grow flex flex-col lg:flex-row gap-6 items-start">
+            
+            {/* Grid & Pagination (Main Content) */}
+            <div className="flex-grow flex-1 w-full flex flex-col justify-between">
+              {filteredStocks.length === 0 ? (
+                <div className="text-center py-20 text-gray-400 text-sm">
+                  No stocks match your active screen filters.
                 </div>
+              ) : (
+                <div className="flex-grow flex flex-col justify-between">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {paginatedStocks.map(stock => {
+                      const isPositive = (stock.performance_1y || 0) >= 0;
+                      return (
+                        <div
+                          key={stock.symbol}
+                          onClick={() => setSelectedStock(stock)}
+                          className={`bg-ramp-grey-900 border ${selectedStock?.symbol === stock.symbol ? 'border-cyan-500 shadow-cyan-500/5 ring-1 ring-cyan-500/20' : 'border-ramp-grey-800 hover:border-ramp-grey-700'} rounded-xl p-4 transition-all duration-200 cursor-pointer hover:shadow-lg flex flex-col justify-between h-40`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={isInActiveWatchlist(stock.symbol)}
+                                onClick={(e) => e.stopPropagation()} // Prevent card click
+                                onChange={async (e) => {
+                                  e.stopPropagation();
+                                  if (e.target.checked) {
+                                    await addTickerToActive(stock.symbol);
+                                  } else {
+                                    await removeTickerFromActive(stock.symbol);
+                                  }
+                                }}
+                                className="h-3.5 w-3.5 rounded border-ramp-grey-850 text-cyan-600 focus:ring-cyan-500/20 bg-ramp-grey-950 cursor-pointer accent-cyan-500"
+                              />
+                              <div className="min-w-0">
+                                <span className="text-white font-bold tracking-tight text-sm">
+                                  {stock.symbol.replace('.NS', '')}
+                                </span>
+                                <h4 className="text-gray-400 text-[10px] font-medium truncate max-w-[100px] mt-0.5" title={stock.name}>
+                                  {stock.name}
+                                </h4>
+                              </div>
+                            </div>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${isPositive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                              {formatPercent(stock.performance_1y)}
+                            </span>
+                          </div>
 
-                {/* Pagination Controls */}
-                {totalPages > 1 && (
-                  <div className="flex justify-center items-center gap-2 mt-8 mb-4">
-                    <button
-                      disabled={page === 1}
-                      onClick={() => setPage(page - 1)}
-                      className="px-3 py-1.5 bg-ramp-grey-900 border border-ramp-grey-800 hover:border-ramp-grey-700 text-xs font-semibold rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Prev
-                    </button>
-                    <span className="text-xs text-gray-400 font-medium px-2">
-                      Page {page} of {totalPages}
-                    </span>
-                    <button
-                      disabled={page === totalPages}
-                      onClick={() => setPage(page + 1)}
-                      className="px-3 py-1.5 bg-ramp-grey-900 border border-ramp-grey-800 hover:border-ramp-grey-700 text-xs font-semibold rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Next
-                    </button>
+                          <div className="flex flex-col gap-1 border-t border-ramp-grey-950 pt-2 mt-2">
+                            <div className="flex justify-between text-[10px] text-gray-400">
+                              <span>Market Cap</span>
+                              <span className="font-semibold text-gray-300">
+                                {formatMarketCap(stock.fundamentals?.market_cap ?? null)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-gray-400">
+                              <span>P/E Ratio</span>
+                              <span className="font-semibold text-gray-300">
+                                {stock.fundamentals?.pe_ratio ? stock.fundamentals.pe_ratio.toFixed(1) : '—'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-gray-400">
+                              <span>ROE %</span>
+                              <span className="font-semibold text-gray-300">
+                                {stock.fundamentals?.roe ? `${stock.fundamentals.roe.toFixed(1)}%` : '—'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[9px] text-gray-500 mt-2">
+                            <span>{stock.sector || 'Unassigned'}</span>
+                            <span className="text-cyan-400 font-semibold flex items-center gap-0.5 hover:underline">
+                              View details <ChevronRight size={10} />
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Pagination Controls */}
+                  {totalPages > 1 && (
+                    <div className="flex justify-center items-center gap-2 mt-8 mb-4">
+                      <button
+                        disabled={page === 1}
+                        onClick={() => setPage(page - 1)}
+                        className="px-3 py-1.5 bg-ramp-grey-900 border border-ramp-grey-800 hover:border-ramp-grey-700 text-xs font-semibold rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Prev
+                      </button>
+                      <span className="text-xs text-gray-400 font-medium px-2">
+                        Page {page} of {totalPages}
+                      </span>
+                      <button
+                        disabled={page === totalPages}
+                        onClick={() => setPage(page + 1)}
+                        className="px-3 py-1.5 bg-ramp-grey-900 border border-ramp-grey-800 hover:border-ramp-grey-700 text-xs font-semibold rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Watchlist Panel */}
+            <div className="w-full lg:w-80 bg-ramp-grey-900 border border-ramp-grey-800 rounded-xl p-4 shadow-xl flex flex-col gap-4 self-start flex-shrink-0">
+              <div className="flex items-center justify-between border-b border-ramp-grey-800 pb-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-400">
+                  <ListPlus size={16} />
+                  <span>My Watchlists</span>
+                </div>
+              </div>
+
+              {/* List Selector / Creator */}
+              <div className="space-y-2">
+                {isCreatingList ? (
+                  <form onSubmit={handleCreateList} className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="List name (e.g. Growth)"
+                      value={newListName}
+                      onChange={(e) => setNewListName(e.target.value)}
+                      className="w-full bg-ramp-grey-1000 border border-ramp-grey-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+                      autoFocus
+                    />
+                    {createError && <p className="text-[10px] text-rose-400">{createError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-1 px-2 rounded text-[10px] transition-all"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setIsCreatingList(false); setCreateError(null); }}
+                        className="flex-1 bg-ramp-grey-850 hover:bg-ramp-grey-800 text-gray-400 font-bold py-1 px-2 rounded text-[10px] transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <select
+                        value={activeWatchlistName || ''}
+                        onChange={(e) => setActiveWatchlistName(e.target.value || null)}
+                        className="flex-1 bg-ramp-grey-1000 border border-ramp-grey-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-cyan-500"
+                      >
+                        {watchlists.length === 0 ? (
+                          <option value="">No lists saved</option>
+                        ) : (
+                          watchlists.map((w) => (
+                            <option key={w.id} value={w.name}>
+                              {w.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                      <button
+                        onClick={() => setIsCreatingList(true)}
+                        className="bg-ramp-grey-850 hover:bg-ramp-grey-800 border border-ramp-grey-800 text-gray-300 p-1.5 rounded-lg text-xs hover:text-white transition-all flex items-center justify-center"
+                        title="Create New List"
+                      >
+                        <Plus size={14} />
+                      </button>
+                      {activeWatchlistName && (
+                        <button
+                          onClick={handleDeleteActiveList}
+                          className="bg-ramp-grey-850 hover:bg-ramp-grey-800 border border-ramp-grey-800 text-gray-400 p-1.5 rounded-lg text-xs hover:text-rose-400 transition-all flex items-center justify-center"
+                          title="Delete Current List"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
-            )}
+
+              {/* Watchlist Tickers List */}
+              <div className="flex-1 min-h-[150px] max-h-[300px] overflow-y-auto bg-ramp-grey-1000 border border-ramp-grey-850 rounded-xl p-3 scrollbar-thin scrollbar-thumb-ramp-grey-800 flex flex-col">
+                {!activeWatchlist || activeWatchlist.tickers.length === 0 ? (
+                  <div className="flex-grow flex items-center justify-center text-center text-[10px] text-gray-500 p-4">
+                    Select stocks from the grid to build your list.
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {activeWatchlist.tickers.map((ticker) => {
+                      const stockDetail = stocks.find(s => s.symbol === ticker);
+                      return (
+                        <div key={ticker} className="flex justify-between items-center text-xs bg-ramp-grey-950/40 border border-ramp-grey-900 rounded px-2.5 py-1.5 hover:border-ramp-grey-800 transition-colors">
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-bold text-white leading-none">{ticker.replace('.NS', '')}</span>
+                            <span className="text-[9px] text-gray-500 truncate mt-0.5 max-w-[150px]">
+                              {stockDetail?.name || ticker}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => removeTickerFromActive(ticker)}
+                            className="text-gray-500 hover:text-rose-400 p-0.5 rounded transition-all hover:bg-ramp-grey-900 flex items-center justify-center"
+                            title="Remove from list"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Simulation configuration */}
+              {activeWatchlist && activeWatchlist.tickers.length > 0 && (
+                <div className="border-t border-ramp-grey-850 pt-3 space-y-3">
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold flex items-center gap-1">
+                      <Settings size={10} /> Choose Model
+                    </span>
+                    <ModelSelector
+                      models={apiModels}
+                      value={selectedModel?.model_name || ''}
+                      onChange={setSelectedModel}
+                      placeholder="Select simulation model..."
+                    />
+                  </div>
+                  
+                  <button
+                    onClick={() => runSimulationOnActive(selectedModel)}
+                    className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-tr from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-lg shadow-indigo-600/10 active:scale-[0.98]"
+                  >
+                    <Play size={14} className="fill-current" /> Run Simulation ({activeWatchlist.tickers.length})
+                  </button>
+                </div>
+              )}
+            </div>
+
           </div>
         )}
       </div>
@@ -576,22 +773,44 @@ export function Screener() {
             {/* Drawer Content */}
             <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin scrollbar-thumb-ramp-grey-800">
               
-              {/* Add to Backtester widget */}
-              <div className="bg-gradient-to-tr from-cyan-900/20 to-indigo-900/20 border border-cyan-500/20 rounded-xl p-4 flex flex-col shadow-inner">
+              {/* Watchlist drawer widget */}
+              <div className="bg-gradient-to-tr from-cyan-900/20 to-indigo-900/20 border border-cyan-500/20 rounded-xl p-4 flex flex-col shadow-inner gap-2">
                 <span className="text-xs font-bold text-white mb-1">Fund Co-Pilot Action</span>
-                <p className="text-[10px] text-gray-300 mb-3">
-                  Instantly load this stock ticker into your AI Agent Simulation Workspace to analyze it with the agent nodes.
+                <p className="text-[10px] text-gray-300 mb-2">
+                  Add this stock to your active list to run simulations, or analyze it right now.
                 </p>
-                <button
-                  onClick={() => {
-                    // Copy symbol to clipboard or trigger flow
-                    navigator.clipboard.writeText(selectedStock.symbol.replace('.NS', ''));
-                    alert(`Ticker "${selectedStock.symbol.replace('.NS', '')}" copied to clipboard! You can paste it into the Left Sidebar Search Box or Agent inputs.`);
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-tr from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-md shadow-indigo-600/15"
-                >
-                  <Plus size={14} /> Copy Ticker to Workspace
-                </button>
+                <div className="flex flex-col gap-2">
+                  {isInActiveWatchlist(selectedStock.symbol) ? (
+                    <button
+                      onClick={async () => {
+                        await removeTickerFromActive(selectedStock.symbol);
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-md"
+                    >
+                      <MinusCircle size={14} /> Remove from List
+                    </button>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        await addTickerToActive(selectedStock.symbol);
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-tr from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-md"
+                    >
+                      <PlusCircle size={14} /> Add to List
+                    </button>
+                  )}
+                  
+                  <button
+                    onClick={() => {
+                      setSimulationTickers(selectedStock.symbol);
+                      setPendingAutoRun(true);
+                      setActiveTab('simulation');
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 bg-ramp-grey-850 hover:bg-ramp-grey-800 border border-ramp-grey-750 text-gray-300 font-bold py-2 rounded-lg text-xs transition-all"
+                  >
+                    <Play size={14} className="fill-current" /> Analyze Stock Now
+                  </button>
+                </div>
               </div>
 
               {/* Glowing SVG Price Chart */}

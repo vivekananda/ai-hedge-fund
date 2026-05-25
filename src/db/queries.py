@@ -1,11 +1,29 @@
 import pandas as pd
 from sqlalchemy.orm import Session
 from src.db.connection import engine, Base
-from src.db.models import Stock, DailyPrice, FundamentalsSnapshot, WeeklyPick, WeeklyPipelineRun, SimulationRun
+from src.db.models import Stock, DailyPrice, FundamentalsSnapshot, WeeklyPick, WeeklyPipelineRun, SimulationRun, Watchlist
 
 def init_db():
     """Provision database tables if they do not exist."""
     Base.metadata.create_all(bind=engine)
+    
+    # Run SQLite migration to add watchlist_name columns if they don't exist
+    from sqlalchemy import text
+    from src.db.connection import SessionLocal
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE weekly_picks ADD COLUMN watchlist_name VARCHAR"))
+        db.commit()
+    except Exception:
+        db.rollback()
+        
+    try:
+        db.execute(text("ALTER TABLE weekly_pipeline_runs ADD COLUMN watchlist_name VARCHAR"))
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 def upsert_stock(db: Session, symbol: str, name: str, sector: str = None, is_nifty500: bool = True) -> Stock:
     """Insert or update stock information."""
@@ -114,18 +132,21 @@ def save_weekly_pick(
     signal: str,
     score: float,
     thesis: str,
-    risk_score: float
+    risk_score: float,
+    watchlist_name: str = "Nifty 500"
 ) -> WeeklyPick:
-    """Save a weekly pick, updating if it already exists for the week and rank."""
+    """Save a weekly pick, updating if it already exists for the week, symbol, and watchlist."""
     pick = db.query(WeeklyPick).filter(
         WeeklyPick.week_start_date == week_start_date,
-        WeeklyPick.symbol == symbol
+        WeeklyPick.symbol == symbol,
+        WeeklyPick.watchlist_name == watchlist_name
     ).first()
     
     if not pick:
         pick = WeeklyPick(
             week_start_date=week_start_date,
-            symbol=symbol
+            symbol=symbol,
+            watchlist_name=watchlist_name
         )
         db.add(pick)
         
@@ -138,20 +159,28 @@ def save_weekly_pick(
     db.commit()
     return pick
 
-def get_weekly_picks(db: Session, week_start_date: str) -> list[WeeklyPick]:
-    """Retrieve all picks for a specific week."""
-    return db.query(WeeklyPick).filter(
-        WeeklyPick.week_start_date == week_start_date
-    ).order_by(WeeklyPick.rank.asc()).all()
+def get_weekly_picks(db: Session, week_start_date: str, watchlist_name: str = "Nifty 500") -> list[WeeklyPick]:
+    """Retrieve all picks for a specific week and watchlist."""
+    if watchlist_name == "Nifty 500":
+        return db.query(WeeklyPick).filter(
+            WeeklyPick.week_start_date == week_start_date,
+            (WeeklyPick.watchlist_name == "Nifty 500") | (WeeklyPick.watchlist_name == None)
+        ).order_by(WeeklyPick.rank.asc()).all()
+    else:
+        return db.query(WeeklyPick).filter(
+            WeeklyPick.week_start_date == week_start_date,
+            WeeklyPick.watchlist_name == watchlist_name
+        ).order_by(WeeklyPick.rank.asc()).all()
 
 
-def create_weekly_run(db: Session, run_date: str, status: str, test_mode: bool, created_at: str) -> WeeklyPipelineRun:
+def create_weekly_run(db: Session, run_date: str, status: str, test_mode: bool, created_at: str, watchlist_name: str = "Nifty 500") -> WeeklyPipelineRun:
     """Create a new weekly pipeline run entry."""
     run = WeeklyPipelineRun(
         run_date=run_date,
         status=status,
         test_mode=test_mode,
-        created_at=created_at
+        created_at=created_at,
+        watchlist_name=watchlist_name
     )
     db.add(run)
     db.commit()
@@ -251,4 +280,45 @@ def delete_simulation_run(db: Session, run_id: str) -> bool:
         db.commit()
         return True
     return False
+
+
+def get_watchlists(db: Session) -> list[Watchlist]:
+    """Retrieve all watchlists."""
+    return db.query(Watchlist).order_by(Watchlist.name.asc()).all()
+
+
+def get_watchlist_by_name(db: Session, name: str) -> Watchlist:
+    """Retrieve a watchlist by name."""
+    return db.query(Watchlist).filter(Watchlist.name == name).first()
+
+
+def create_or_update_watchlist(db: Session, name: str, tickers: list[str]) -> Watchlist:
+    """Create or update a named watchlist."""
+    import datetime
+    watchlist = db.query(Watchlist).filter(Watchlist.name == name).first()
+    tickers_str = ",".join(tickers)
+    created_at_str = datetime.datetime.now().isoformat()
+    if not watchlist:
+        watchlist = Watchlist(
+            name=name,
+            tickers=tickers_str,
+            created_at=created_at_str
+        )
+        db.add(watchlist)
+    else:
+        watchlist.tickers = tickers_str
+    db.commit()
+    db.refresh(watchlist)
+    return watchlist
+
+
+def delete_watchlist(db: Session, name: str) -> bool:
+    """Delete a watchlist by name."""
+    watchlist = db.query(Watchlist).filter(Watchlist.name == name).first()
+    if watchlist:
+        db.delete(watchlist)
+        db.commit()
+        return True
+    return False
+
 

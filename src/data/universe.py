@@ -70,6 +70,11 @@ def sync_nifty500_universe(db: Session = None) -> int:
                 is_nifty500=True
             )
             
+        # Automatically populate/update a "Nifty 500" watchlist
+        from src.db.queries import create_or_update_watchlist
+        symbols = [c["symbol"] for c in constituents]
+        create_or_update_watchlist(db, "Nifty 500", symbols)
+            
         return len(constituents)
     finally:
         if own_session:

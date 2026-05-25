@@ -37,6 +37,8 @@ const DEFAULT_AGENT_NODE_STATE: AgentNodeData = {
 interface NodeContextType {
   agentNodeData: Record<string, AgentNodeData>;
   outputNodeData: OutputNodeData | null;
+  error: string | null;
+  setError: (err: string | null) => void;
   updateAgentNode: (nodeId: string, data: Partial<AgentNodeData> | NodeStatus) => void;
   updateAgentNodes: (nodeIds: string[], status: NodeStatus) => void;
   setOutputNodeData: (data: OutputNodeData) => void;
@@ -49,6 +51,7 @@ const NodeContext = createContext<NodeContextType | undefined>(undefined);
 export function NodeProvider({ children }: { children: ReactNode }) {
   const [agentNodeData, setAgentNodeData] = useState<Record<string, AgentNodeData>>({});
   const [outputNodeData, setOutputNodeData] = useState<OutputNodeData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const updateAgentNode = useCallback((nodeId: string, data: Partial<AgentNodeData> | NodeStatus) => {
     // Handle string status shorthand (just passing a status string)
@@ -114,6 +117,7 @@ export function NodeProvider({ children }: { children: ReactNode }) {
   const resetAllNodes = useCallback(() => {
     setAgentNodeData({});
     setOutputNodeData(null);
+    setError(null);
   }, []);
 
   const loadPastRun = useCallback((logs: any[], decisions: any, analystSignals: any) => {
@@ -190,6 +194,8 @@ export function NodeProvider({ children }: { children: ReactNode }) {
       value={{
         agentNodeData,
         outputNodeData,
+        error,
+        setError,
         updateAgentNode,
         updateAgentNodes,
         setOutputNodeData,

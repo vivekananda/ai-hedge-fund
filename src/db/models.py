@@ -60,6 +60,7 @@ class WeeklyPick(Base):
     score = Column(Float, nullable=True)     # Overall score
     thesis = Column(Text, nullable=True)     # LLM thesis
     risk_score = Column(Float, nullable=True) # Qualitative risk score
+    watchlist_name = Column(String, nullable=True, index=True)
 
     stock = relationship("Stock", back_populates="weekly_picks")
 
@@ -73,6 +74,7 @@ class WeeklyPipelineRun(Base):
     error_message = Column(Text, nullable=True)
     test_mode = Column(Boolean, default=False)
     created_at = Column(String, nullable=False)             # ISO timestamp
+    watchlist_name = Column(String, nullable=True)
 
 
 class SimulationRun(Base):
@@ -90,4 +92,14 @@ class SimulationRun(Base):
     decisions = Column(Text, nullable=True)                 # JSON string
     analyst_signals = Column(Text, nullable=True)           # JSON string
     logs = Column(Text, nullable=True)                      # JSON list of progress events
+
+
+class Watchlist(Base):
+    __tablename__ = "watchlists"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True, index=True)
+    tickers = Column(Text, nullable=False)                  # Comma-separated symbols
+    created_at = Column(String, nullable=False)             # ISO timestamp
+
 

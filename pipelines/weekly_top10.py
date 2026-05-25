@@ -11,11 +11,11 @@ from src.tools.api import get_price_data, get_prices
 from src.agents.technicals import calculate_sma, calculate_rsi
 from src.main import run_hedge_fund
 
-def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: str = "Gemini", test_mode: bool = False):
+def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: str = "Gemini", test_mode: bool = False, watchlist_name: str = "Nifty 500"):
     """
     Runs the complete weekly top 10 picks pipeline for Indian stocks.
     """
-    print(f"[{datetime.datetime.now()}] Starting Weekly Top 10 Pipeline...")
+    print(f"[{datetime.datetime.now()}] Starting Weekly Top 10 Pipeline (Universe: {watchlist_name})...")
     
     # 1. Initialize DB and sync universe
     init_db()
@@ -25,8 +25,23 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
         # Sync Nifty 500
         sync_nifty500_universe(db)
         
-        all_stocks = get_all_stocks(db)
-        print(f"Total stocks in universe: {len(all_stocks)}")
+        # Load stocks based on the selected watchlist
+        if watchlist_name and watchlist_name != "Nifty 500":
+            from src.db.queries import get_watchlist_by_name
+            wl = get_watchlist_by_name(db, watchlist_name)
+            if wl:
+                watchlist_tickers = [t.strip() for t in wl.tickers.split(",") if t.strip()]
+                # Filter stocks in the database to only those in the watchlist
+                all_stocks = get_all_stocks(db)
+                all_stocks = [s for s in all_stocks if s.symbol in watchlist_tickers]
+                print(f"Filtering stock universe to watchlist '{watchlist_name}' ({len(all_stocks)} stocks)")
+            else:
+                print(f"Watchlist '{watchlist_name}' not found. Defaulting to all stocks.")
+                all_stocks = get_all_stocks(db)
+        else:
+            all_stocks = get_all_stocks(db)
+            
+        print(f"Total stocks to process: {len(all_stocks)}")
         
         # 2. Compute quantitative factors and score candidates
         scored_candidates = []
@@ -197,7 +212,8 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                 signal=pick["action"],
                 score=pick["confidence"],
                 thesis=pick["thesis"],
-                risk_score=pick["risk_score"]
+                risk_score=pick["risk_score"],
+                watchlist_name=watchlist_name
             )
             
             table_data.append([
@@ -221,6 +237,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default="gemini-2.0-flash", help="LLM model name")
     parser.add_argument("--provider", type=str, default="Gemini", help="LLM provider name")
     parser.add_argument("--test", action="store_true", help="Run in speed test mode with limited tickers")
+    parser.add_argument("--watchlist", type=str, default="Nifty 500", help="Watchlist name to filter stocks")
     args = parser.parse_args()
     
-    run_weekly_pipeline(model_name=args.model, model_provider=args.provider, test_mode=args.test)
+    run_weekly_pipeline(model_name=args.model, model_provider=args.provider, test_mode=args.test, watchlist_name=args.watchlist)
