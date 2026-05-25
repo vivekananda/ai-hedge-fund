@@ -57,7 +57,7 @@ export interface SimulationRunDetail extends SimulationRunMetadata {
   logs: any[];
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8008';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8008';
 
 export const api = {
   /**
@@ -279,6 +279,15 @@ export const api = {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error(`Failed to delete simulation run ${runId}`);
+    return res.json();
+  },
+
+  // Stocks endpoints
+  syncStocksData: async (): Promise<{ message: string }> => {
+    const res = await fetch(`${API_BASE_URL}/stocks/sync`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to sync stock data');
     return res.json();
   },
 

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Calendar, Play, Loader2, Shield, AlertCircle, PlusCircle, MinusCircle, Plus, ListPlus, Trash2, Settings, X } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Calendar, Play, Loader2, Shield, AlertCircle, PlusCircle, MinusCircle, Plus, ListPlus, Trash2, Settings, X, Database, ExternalLink } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -21,19 +21,97 @@ export function WeeklyPicksDashboard() {
     addTickerToActive,
     removeTickerFromActive,
     isInActiveWatchlist,
-    runSimulationOnActive
+    runSimulationOnActive,
+    setActiveTab,
+    setSimulationTickers,
+    setPendingAutoRun
   } = useWatchlist();
 
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [newListName, setNewListName] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [stocks, setStocks] = useState<any[]>([]);
+  const [selectedStock, setSelectedStock] = useState<any | null>(null);
+  const [prices, setPrices] = useState<any[]>([]);
+  const [pricesLoading, setPricesLoading] = useState(false);
+  const [chartHoverIndex, setChartHoverIndex] = useState<number | null>(null);
+
+  // Fetch prices for slide-out drawer
+  useEffect(() => {
+    if (!selectedStock) {
+      setPrices([]);
+      return;
+    }
+    const fetchPrices = async () => {
+      try {
+        setPricesLoading(true);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8008'}/stocks/${selectedStock.symbol}/prices`);
+        if (res.ok) {
+          const data = await res.json();
+          setPrices(data);
+        }
+      } catch (err) {
+        console.error('Error fetching stock prices:', err);
+      } finally {
+        setPricesLoading(false);
+      }
+    };
+    fetchPrices();
+    setChartHoverIndex(null);
+  }, [selectedStock]);
+
+  const renderSVGChart = useMemo(() => {
+    if (prices.length === 0) return null;
+    const width = 450, height = 180, padding = 20;
+    const closePrices = prices.map(p => p.close);
+    const minClose = Math.min(...closePrices);
+    const maxClose = Math.max(...closePrices);
+    const priceRange = maxClose - minClose || 1;
+    const points = prices.map((p, idx) => ({
+      x: padding + (idx / (prices.length - 1)) * (width - 2 * padding),
+      y: height - padding - ((p.close - minClose) / priceRange) * (height - 2 * padding),
+      date: p.date, close: p.close
+    }));
+    let linePath = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      linePath += ` C ${prev.x + (curr.x - prev.x) / 2} ${prev.y}, ${prev.x + (curr.x - prev.x) / 2} ${curr.y}, ${curr.x} ${curr.y}`;
+    }
+    const areaPath = `${linePath} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`;
+    return { points, linePath, areaPath, width, height, minClose, maxClose, padding };
+  }, [prices]);
+
+  const chartRef = useRef<SVGSVGElement>(null);
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!renderSVGChart || !chartRef.current) return;
+    const rect = chartRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    renderSVGChart.points.forEach((pt, idx) => {
+      const diff = Math.abs(pt.x - mouseX);
+      if (diff < minDiff) { minDiff = diff; closestIdx = idx; }
+    });
+    setChartHoverIndex(closestIdx);
+  };
+  const handleMouseLeave = () => setChartHoverIndex(null);
+
+  const formatMarketCap = (cap: number | null | undefined) => {
+    if (!cap) return '—';
+    if (cap >= 100000) return `₹${(cap / 100000).toFixed(2)} L Cr`;
+    return `₹${cap.toLocaleString('en-IN', { maximumFractionDigits: 0 })} Cr`;
+  };
+  const formatPercent = (val: number | null | undefined) => {
+    if (val === null || val === undefined) return '—';
+    return `${val > 0 ? '+' : ''}${val.toFixed(1)}%`;
+  };
 
   // Fetch stocks list to display names inside watchlist
   useEffect(() => {
     const fetchStocks = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8008'}/stocks`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8008'}/stocks`);
         if (res.ok) {
           const data = await res.json();
           setStocks(data);
@@ -186,6 +264,24 @@ export function WeeklyPicksDashboard() {
   const runningJob = activeRuns.find(r => r.status === 'RUNNING' || r.status === 'PENDING');
   const lastCompletedJob = activeRuns.find(r => r.status === 'COMPLETED' || r.status === 'FAILED');
 
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  const handleSyncData = async () => {
+    try {
+      setIsSyncing(true);
+      setSyncMessage(null);
+      const res = await api.syncStocksData();
+      setSyncMessage(res.message);
+      setTimeout(() => setSyncMessage(null), 5000);
+    } catch (err: any) {
+      setSyncMessage(err.message || 'Failed to sync data');
+      setTimeout(() => setSyncMessage(null), 5000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto bg-ramp-grey-1000 text-white p-6 space-y-6">
       {/* Upper Grid: Actions & Historical Runs */}
@@ -193,14 +289,31 @@ export function WeeklyPicksDashboard() {
         
         {/* Run Pipeline Card */}
         <Card className="bg-ramp-grey-900 border-ramp-grey-800 text-white shadow-xl lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-white text-lg font-bold flex items-center gap-2">
-              <Play className="h-5 w-5 text-cyan-400" />
-              Trigger Weekly Analysis Pipeline
-            </CardTitle>
-            <CardDescription className="text-gray-400">
-              Run the multi-agent hedge fund analyzer across {selectedWatchlist === 'Nifty 500' ? 'Nifty 500 candidate stocks' : `candidate stocks in "${selectedWatchlist}"`}. Technical filters screen down candidates, then qualitative AI agents decide the top 10 buys.
-            </CardDescription>
+          <CardHeader className="flex flex-row items-start justify-between">
+            <div>
+              <CardTitle className="text-white text-lg font-bold flex items-center gap-2">
+                <Play className="h-5 w-5 text-cyan-400" />
+                Trigger Weekly Analysis Pipeline
+              </CardTitle>
+              <CardDescription className="text-gray-400 mt-1.5">
+                Run the multi-agent hedge fund analyzer across {selectedWatchlist === 'Nifty 500' ? 'Nifty 500 candidate stocks' : `candidate stocks in "${selectedWatchlist}"`}. Technical filters screen down candidates, then qualitative AI agents decide the top 10 buys.
+              </CardDescription>
+            </div>
+            <div className="flex flex-col items-end gap-2 shrink-0 ml-4">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="bg-ramp-grey-950 border-ramp-grey-800 hover:bg-ramp-grey-800 text-cyan-400"
+                onClick={handleSyncData}
+                disabled={isSyncing}
+              >
+                {isSyncing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Database className="h-4 w-4 mr-2" />}
+                {isSyncing ? 'Triggering Pull...' : 'Pull Latest Data'}
+              </Button>
+              {syncMessage && (
+                <span className="text-[10px] text-cyan-400/80 max-w-[150px] text-right">{syncMessage}</span>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -383,7 +496,15 @@ export function WeeklyPicksDashboard() {
                         </div>
                         <div className="flex flex-col">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-white font-bold text-sm tracking-wide leading-none">{pick.symbol}</span>
+                            <button
+                              onClick={() => {
+                                const stockDetail = stocks.find(s => s.symbol === pick.symbol);
+                                setSelectedStock(stockDetail || { symbol: pick.symbol, name: pick.name });
+                              }}
+                              className="text-white font-bold text-sm tracking-wide leading-none hover:text-cyan-400 hover:underline text-left cursor-pointer transition-colors"
+                            >
+                              {pick.symbol.replace('.NS', '')}
+                            </button>
                             {isInActiveWatchlist(pick.symbol) ? (
                               <button
                                 onClick={async () => {
@@ -446,6 +567,44 @@ export function WeeklyPicksDashboard() {
                         </div>
                       </div>
 
+                      {(() => {
+                        const stockDetail = stocks.find(s => s.symbol === pick.symbol);
+                        return stockDetail ? (
+                          <div className="flex flex-col gap-1 border-t border-ramp-grey-800/40 pt-2 mt-2 text-[10px] text-gray-400">
+                            <div className="flex justify-between">
+                              <span>Market Cap</span>
+                              <span className="font-semibold text-gray-300">
+                                {formatMarketCap(stockDetail.fundamentals?.market_cap)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>P/E Ratio</span>
+                              <span className="font-semibold text-gray-300">
+                                {stockDetail.fundamentals?.pe_ratio ? stockDetail.fundamentals.pe_ratio.toFixed(1) : '—'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>ROE %</span>
+                              <span className="font-semibold text-gray-300">
+                                {stockDetail.fundamentals?.roe ? `${stockDetail.fundamentals.roe.toFixed(1)}%` : '—'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Sector</span>
+                              <span className="font-semibold text-gray-300">
+                                {stockDetail.sector || '—'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>1Y Return</span>
+                              <span className={`font-semibold ${stockDetail.performance_1y && stockDetail.performance_1y >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {formatPercent(stockDetail.performance_1y)}
+                              </span>
+                            </div>
+                          </div>
+                        ) : null;
+                      })()}
+                      
                       {/* Qualitative Thesis */}
                       <div className="flex-grow">
                         <span className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold block mb-1.5">Qualitative Thesis</span>
@@ -598,6 +757,158 @@ export function WeeklyPicksDashboard() {
           </div>
         )}
 
+      </div>
+
+      {/* Slide-out details drawer */}
+      <div className={`fixed top-[57px] right-0 bottom-0 z-30 w-[460px] bg-ramp-grey-900 border-l border-ramp-grey-800 transform ${selectedStock ? 'translate-x-0' : 'translate-x-full'} transition-transform duration-300 ease-in-out shadow-2xl flex flex-col justify-between`}>
+        {selectedStock && (
+          <div className="flex flex-col h-full">
+            {/* Drawer Header */}
+            <div className="p-5 border-b border-ramp-grey-800 flex justify-between items-start flex-shrink-0 bg-ramp-grey-900/50 backdrop-blur-md">
+              <div>
+                <span className="inline-block text-xs font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded mb-2">
+                  {selectedStock.sector || 'Unassigned Sector'}
+                </span>
+                <h2 className="text-white text-lg font-bold leading-tight flex items-center gap-2">
+                  {selectedStock.symbol.replace('.NS', '')}
+                  <a 
+                    href={`https://www.screener.in/company/${selectedStock.symbol.replace('.NS', '')}/`}
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-cyan-400 transition-colors"
+                    title="Open in Screener.in"
+                  >
+                    <ExternalLink size={16} />
+                  </a>
+                </h2>
+                <h3 className="text-gray-400 text-xs mt-1 font-medium">{selectedStock.name}</h3>
+              </div>
+              <button
+                onClick={() => setSelectedStock(null)}
+                className="text-gray-400 hover:text-white p-1 hover:bg-ramp-grey-800 rounded transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Drawer Content */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin scrollbar-thumb-ramp-grey-800">
+              
+
+
+              {/* Glowing SVG Price Chart */}
+              <div>
+                <h3 className="text-white text-xs font-semibold uppercase tracking-wider mb-3">1-Year Close Price Chart</h3>
+                <div className="bg-ramp-grey-1000 border border-ramp-grey-800 rounded-xl p-3 h-52 relative flex items-center justify-center shadow-inner overflow-hidden">
+                  {pricesLoading && (
+                    <div className="flex flex-col items-center gap-2 text-gray-400">
+                      <Loader2 size={24} className="animate-spin text-cyan-400" />
+                      <span className="text-[10px]">Loading price series...</span>
+                    </div>
+                  )}
+                  {!pricesLoading && prices.length === 0 && (
+                    <span className="text-xs text-gray-500">Price history not available for this stock.</span>
+                  )}
+                  {!pricesLoading && prices.length > 0 && renderSVGChart && (
+                    <div className="w-full h-full flex flex-col justify-between">
+                      <div className="flex justify-between items-center text-[10px] font-semibold text-gray-400 border-b border-ramp-grey-800/40 pb-1 mb-1">
+                        <span>
+                          {chartHoverIndex !== null 
+                            ? `Date: ${renderSVGChart.points[chartHoverIndex].date}`
+                            : `Range: ${prices[0].date} to ${prices[prices.length - 1].date}`
+                          }
+                        </span>
+                        <span className="text-cyan-400 font-bold">
+                          {chartHoverIndex !== null
+                            ? `₹${renderSVGChart.points[chartHoverIndex].close.toFixed(2)}`
+                            : `Last: ₹${prices[prices.length - 1].close.toFixed(2)}`
+                          }
+                        </span>
+                      </div>
+                      <svg
+                        ref={chartRef}
+                        width="100%"
+                        height="145"
+                        viewBox={`0 0 ${renderSVGChart.width} ${renderSVGChart.height}`}
+                        preserveAspectRatio="none"
+                        onMouseMove={handleMouseMove}
+                        onMouseLeave={handleMouseLeave}
+                        className="overflow-visible cursor-crosshair"
+                      >
+                        <defs>
+                          <linearGradient id="chartGradient2" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.25" />
+                            <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
+                          </linearGradient>
+                        </defs>
+                        <line x1={renderSVGChart.padding} y1={renderSVGChart.height / 2} x2={renderSVGChart.width - renderSVGChart.padding} y2={renderSVGChart.height / 2} stroke="#383838" strokeWidth="0.5" strokeDasharray="3" />
+                        <line x1={renderSVGChart.padding} y1={renderSVGChart.height - renderSVGChart.padding} x2={renderSVGChart.width - renderSVGChart.padding} y2={renderSVGChart.height - renderSVGChart.padding} stroke="#383838" strokeWidth="0.5" />
+                        <path d={renderSVGChart.areaPath} fill="url(#chartGradient2)" />
+                        <path d={renderSVGChart.linePath} fill="none" stroke="#06b6d4" strokeWidth="1.8" />
+                        {chartHoverIndex !== null && renderSVGChart.points[chartHoverIndex] && (
+                          <>
+                            <line
+                              x1={renderSVGChart.points[chartHoverIndex].x}
+                              y1={renderSVGChart.padding}
+                              x2={renderSVGChart.points[chartHoverIndex].x}
+                              y2={renderSVGChart.height - renderSVGChart.padding}
+                              stroke="#06b6d4"
+                              strokeWidth="0.5"
+                              strokeDasharray="2"
+                            />
+                            <circle
+                              cx={renderSVGChart.points[chartHoverIndex].x}
+                              cy={renderSVGChart.points[chartHoverIndex].y}
+                              r="5"
+                              fill="#06b6d4"
+                              stroke="#1e1e1e"
+                              strokeWidth="1.5"
+                            />
+                          </>
+                        )}
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Fundamental Metrics list */}
+              <div>
+                <h3 className="text-white text-xs font-semibold uppercase tracking-wider mb-3">Fundamental Ratios</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                    <span className="text-[10px] text-gray-500 uppercase font-medium">Market Cap</span>
+                    <p className="text-white text-sm font-bold mt-0.5">{formatMarketCap(selectedStock.fundamentals?.market_cap)}</p>
+                  </div>
+                  <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                    <span className="text-[10px] text-gray-500 uppercase font-medium">Price/Earnings (P/E)</span>
+                    <p className="text-white text-sm font-bold mt-0.5">{selectedStock.fundamentals?.pe_ratio ? selectedStock.fundamentals.pe_ratio.toFixed(2) : '—'}</p>
+                  </div>
+                  <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                    <span className="text-[10px] text-gray-500 uppercase font-medium">Price/Book (P/B)</span>
+                    <p className="text-white text-sm font-bold mt-0.5">{selectedStock.fundamentals?.pb_ratio ? selectedStock.fundamentals.pb_ratio.toFixed(2) : '—'}</p>
+                  </div>
+                  <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                    <span className="text-[10px] text-gray-500 uppercase font-medium">Debt to Equity</span>
+                    <p className="text-white text-sm font-bold mt-0.5">{selectedStock.fundamentals?.debt_to_equity ? selectedStock.fundamentals.debt_to_equity.toFixed(2) : '—'}</p>
+                  </div>
+                  <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                    <span className="text-[10px] text-gray-500 uppercase font-medium">Return on Equity (ROE)</span>
+                    <p className="text-white text-sm font-bold mt-0.5">{selectedStock.fundamentals?.roe ? `${selectedStock.fundamentals.roe.toFixed(1)}%` : '—'}</p>
+                  </div>
+                  <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                    <span className="text-[10px] text-gray-500 uppercase font-medium">Sales Growth (3Yr)</span>
+                    <p className="text-white text-sm font-bold mt-0.5">{selectedStock.fundamentals?.sales_growth_3yr ? `${selectedStock.fundamentals.sales_growth_3yr.toFixed(1)}%` : '—'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* Drawer Footer info */}
+            <div className="p-4 border-t border-ramp-grey-800 text-[10px] text-gray-500 text-center bg-ramp-grey-950/20">
+              Data retrieved from Yahoo Finance & local database • As of {selectedStock.fundamentals?.as_of_date || '—'}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

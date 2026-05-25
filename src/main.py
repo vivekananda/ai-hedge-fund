@@ -111,19 +111,23 @@ def create_workflow(selected_analysts=None):
     if selected_analysts is None:
         selected_analysts = list(analyst_nodes.keys())
     # Add selected analyst nodes
-    for analyst_key in selected_analysts:
-        node_name, node_func = analyst_nodes[analyst_key]
-        workflow.add_node(node_name, node_func)
-        workflow.add_edge("start_node", node_name)
+    if not selected_analysts:
+        workflow.add_edge("start_node", "risk_management_agent")
+    else:
+        for analyst_key in selected_analysts:
+            node_name, node_func = analyst_nodes[analyst_key]
+            workflow.add_node(node_name, node_func)
+            workflow.add_edge("start_node", node_name)
 
     # Always add risk and portfolio management
     workflow.add_node("risk_management_agent", risk_management_agent)
     workflow.add_node("portfolio_manager", portfolio_management_agent)
 
     # Connect selected analysts to risk management
-    for analyst_key in selected_analysts:
-        node_name = analyst_nodes[analyst_key][0]
-        workflow.add_edge(node_name, "risk_management_agent")
+    if selected_analysts:
+        for analyst_key in selected_analysts:
+            node_name = analyst_nodes[analyst_key][0]
+            workflow.add_edge(node_name, "risk_management_agent")
 
     workflow.add_edge("risk_management_agent", "portfolio_manager")
     workflow.add_edge("portfolio_manager", END)

@@ -78,6 +78,6 @@ def risk_management_agent(state: AgentState):
     state["data"]["analyst_signals"]["risk_management_agent"] = risk_analysis
 
     return {
-        "messages": state["messages"] + [message],
+        "messages": [message],
         "data": data,
     }

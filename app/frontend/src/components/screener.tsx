@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, ChevronRight, X, Loader2, TrendingUp, TrendingDown, Activity, Plus, PlusCircle, MinusCircle, ListPlus, Trash2, Play, Settings } from 'lucide-react';
+import { Search, ChevronRight, X, Loader2, TrendingUp, TrendingDown, Activity, Plus, PlusCircle, MinusCircle, ListPlus, Trash2, Play, Settings, ExternalLink } from 'lucide-react';
 import { useWatchlist } from '@/contexts/watchlist-context';
 import { ModelSelector } from './ui/llm-selector';
 import { apiModels } from '@/data/models';
@@ -32,7 +32,7 @@ interface PricePoint {
   volume: number;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8008';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8008';
 
 export function Screener() {
   const [stocks, setStocks] = useState<Stock[]>([]);
@@ -757,8 +757,17 @@ export function Screener() {
                 <span className="inline-block text-xs font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded mb-2">
                   {selectedStock.sector || 'Unassigned Sector'}
                 </span>
-                <h2 className="text-white text-lg font-bold leading-tight">
+                <h2 className="text-white text-lg font-bold leading-tight flex items-center gap-2">
                   {selectedStock.symbol.replace('.NS', '')}
+                  <a 
+                    href={`https://www.screener.in/company/${selectedStock.symbol.replace('.NS', '')}/`}
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-cyan-400 transition-colors"
+                    title="Open in Screener.in"
+                  >
+                    <ExternalLink size={16} />
+                  </a>
                 </h2>
                 <h3 className="text-gray-400 text-xs mt-1 font-medium">{selectedStock.name}</h3>
               </div>
@@ -773,45 +782,7 @@ export function Screener() {
             {/* Drawer Content */}
             <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin scrollbar-thumb-ramp-grey-800">
               
-              {/* Watchlist drawer widget */}
-              <div className="bg-gradient-to-tr from-cyan-900/20 to-indigo-900/20 border border-cyan-500/20 rounded-xl p-4 flex flex-col shadow-inner gap-2">
-                <span className="text-xs font-bold text-white mb-1">Fund Co-Pilot Action</span>
-                <p className="text-[10px] text-gray-300 mb-2">
-                  Add this stock to your active list to run simulations, or analyze it right now.
-                </p>
-                <div className="flex flex-col gap-2">
-                  {isInActiveWatchlist(selectedStock.symbol) ? (
-                    <button
-                      onClick={async () => {
-                        await removeTickerFromActive(selectedStock.symbol);
-                      }}
-                      className="w-full flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-md"
-                    >
-                      <MinusCircle size={14} /> Remove from List
-                    </button>
-                  ) : (
-                    <button
-                      onClick={async () => {
-                        await addTickerToActive(selectedStock.symbol);
-                      }}
-                      className="w-full flex items-center justify-center gap-1.5 bg-gradient-to-tr from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-md"
-                    >
-                      <PlusCircle size={14} /> Add to List
-                    </button>
-                  )}
-                  
-                  <button
-                    onClick={() => {
-                      setSimulationTickers(selectedStock.symbol);
-                      setPendingAutoRun(true);
-                      setActiveTab('simulation');
-                    }}
-                    className="w-full flex items-center justify-center gap-1.5 bg-ramp-grey-850 hover:bg-ramp-grey-800 border border-ramp-grey-750 text-gray-300 font-bold py-2 rounded-lg text-xs transition-all"
-                  >
-                    <Play size={14} className="fill-current" /> Analyze Stock Now
-                  </button>
-                </div>
-              </div>
+
 
               {/* Glowing SVG Price Chart */}
               <div>

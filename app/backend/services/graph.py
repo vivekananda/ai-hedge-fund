@@ -23,19 +23,23 @@ def create_graph(selected_agents: list[str]) -> StateGraph:
     analyst_nodes = {key: (f"{key}_agent", config["agent_func"]) for key, config in ANALYST_CONFIG.items()}
 
     # Add selected analyst nodes
-    for agent_name in selected_agents:
-        node_name, node_func = analyst_nodes[agent_name]
-        graph.add_node(node_name, node_func)
-        graph.add_edge("start_node", node_name)
+    if not selected_agents:
+        graph.add_edge("start_node", "risk_management_agent")
+    else:
+        for agent_name in selected_agents:
+            node_name, node_func = analyst_nodes[agent_name]
+            graph.add_node(node_name, node_func)
+            graph.add_edge("start_node", node_name)
 
     # Always add risk and portfolio management (for now)
     graph.add_node("risk_management_agent", risk_management_agent)
     graph.add_node("portfolio_manager", portfolio_management_agent)
 
     # Connect selected agents to risk management
-    for agent_name in selected_agents:
-        node_name = analyst_nodes[agent_name][0]
-        graph.add_edge(node_name, "risk_management_agent")
+    if selected_agents:
+        for agent_name in selected_agents:
+            node_name = analyst_nodes[agent_name][0]
+            graph.add_edge(node_name, "risk_management_agent")
 
     # Connect the risk management agent to the portfolio management agent
     graph.add_edge("risk_management_agent", "portfolio_manager")

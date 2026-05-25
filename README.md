@@ -1,8 +1,8 @@
-# AI Hedge Fund
+# AI Hedge Fund (Indian Market Edition)
 
-This is a proof of concept for an AI-powered hedge fund.  The goal of this project is to explore the use of AI to make trading decisions.  This project is for **educational** purposes only and is not intended for real trading or investment.
+This is a proof of concept for an AI-powered hedge fund tailored for the **Indian Stock Market (NSE)**. The goal of this project is to explore the use of AI to make trading decisions, utilizing fundamental data from Screener.in and technical analysis. This project is for **educational** purposes only and is not intended for real trading or investment.
 
-This system employs several agents working together:
+This system employs several agents working together, combined with a robust backend and an interactive frontend dashboard:
 
 1. Aswath Damodaran Agent - The Dean of Valuation, focuses on story, numbers, and disciplined valuation
 2. Ben Graham Agent - The godfather of value investing, only buys hidden gems with a margin of safety
@@ -16,13 +16,78 @@ This system employs several agents working together:
 10. Warren Buffett Agent - The oracle of Omaha, seeks wonderful companies at a fair price
 11. Valuation Agent - Calculates the intrinsic value of a stock and generates trading signals
 12. Sentiment Agent - Analyzes market sentiment and generates trading signals
-13. Fundamentals Agent - Analyzes fundamental data and generates trading signals
+13. Fundamentals Agent - Analyzes fundamental data (via Screener.in) and generates trading signals
 14. Technicals Agent - Analyzes technical indicators and generates trading signals
 15. Risk Manager - Calculates risk metrics and sets position limits
 16. Portfolio Manager - Makes final trading decisions and generates orders
-    
-<img width="1042" alt="Screenshot 2025-03-22 at 6 19 07 PM" src="https://github.com/user-attachments/assets/cbae3dcf-b571-490d-b0ad-3f0f035ac0d4" />
 
+### System Architecture
+
+```mermaid
+graph TD
+    subgraph Frontend
+        UI[React Dashboard]
+    end
+
+    subgraph Backend
+        API[FastAPI Server]
+        DB[(SQLite Database)]
+        Pipeline[Data Ingestion Pipelines]
+    end
+
+    subgraph AI Agents
+        Data[Market Data / Screener.in]
+        Agents[10+ Specialized Agents]
+        PM[Portfolio Manager]
+    end
+
+    UI <--> API
+    API <--> DB
+    Pipeline --> DB
+    API <--> Agents
+    Data --> Agents
+    Agents --> PM
+```
+
+### Agent Workflow
+
+```mermaid
+graph TD
+    subgraph Data Sources
+        Price[Price Data NSE]
+        Fund[Fundamental Data Screener.in]
+    end
+
+    subgraph Analysts
+        Val[Valuation Agent]
+        Sent[Sentiment Agent]
+        Tech[Technicals Agent]
+        FundA[Fundamentals Agent]
+    end
+
+    subgraph Master Investors
+        Buffett[Warren Buffett Agent]
+        Damodaran[Aswath Damodaran Agent]
+        Wood[Cathie Wood Agent]
+        Others[...other investor agents]
+    end
+
+    Price --> Tech
+    Price --> Val
+    Fund --> FundA
+    Fund --> Val
+    
+    Analysts --> Risk[Risk Manager]
+    Master Investors --> Risk
+    Risk --> PM[Portfolio Manager]
+```
+
+**Features:**
+* **Indian Market Focus:** Designed to analyze NSE tickers (e.g., RELIANCE.NS, TCS.NS).
+* **Data Persistence:** Uses an SQLite database (`hedge_fund.db`) to store price and fundamental data.
+* **Interactive UI:** A React frontend (`app/`) to view analysis, trigger data ingestion, and manage stock wishlists.
+* **Wishlists:** Ability to manage custom lists of stocks for targeted analysis (including a pre-populated Nifty 500 list).
+* **Pipelines:** Scripts for ingesting price data (`ingest_prices.py`), fundamental data (`fundamentals_ingest.py`), and running a weekly analysis pipeline.
 
 **Note**: the system simulates trading decisions, it does not actually trade.
 
@@ -43,10 +108,11 @@ By using this software, you agree to use it solely for learning purposes.
 ## Table of Contents
 - [Setup](#setup)
   - [Using Poetry](#using-poetry)
-  - [Using Docker](#using-docker)
 - [Usage](#usage)
-  - [Running the Hedge Fund](#running-the-hedge-fund)
+  - [Running the Application (Backend & Frontend)](#running-the-application-backend--frontend)
+  - [Running the Hedge Fund (CLI)](#running-the-hedge-fund-cli)
   - [Running the Backtester](#running-the-backtester)
+  - [Data Ingestion Pipelines](#data-ingestion-pipelines)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
 - [Feature Requests](#feature-requests)
@@ -67,192 +133,111 @@ cd ai-hedge-fund
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-2. Install dependencies:
+2. Install backend dependencies:
 ```bash
 poetry install
 ```
 
-3. Set up your environment variables:
+3. Install frontend dependencies:
+```bash
+cd app/frontend
+npm install
+cd ../..
+```
+
+4. Set up your environment variables:
 ```bash
 # Create .env file for your API keys
 cp .env.example .env
 ```
 
-4. Set your API keys:
+5. Set your API keys in the `.env` file:
 ```bash
 # For running LLMs hosted by openai (gpt-4o, gpt-4o-mini, etc.)
-# Get your OpenAI API key from https://platform.openai.com/
 OPENAI_API_KEY=your-openai-api-key
 
-# For running LLMs hosted by groq (deepseek, llama3, etc.)
-# Get your Groq API key from https://groq.com/
-GROQ_API_KEY=your-groq-api-key
-
-# For getting financial data to power the hedge fund
-# Get your Financial Datasets API key from https://financialdatasets.ai/
-FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
+# For getting fundamental data for Indian stocks
+SCREENER_API_KEY=your-screener-api-key
 ```
-
-### Using Docker
-
-1. Make sure you have Docker installed on your system. If not, you can download it from [Docker's official website](https://www.docker.com/get-started).
-
-2. Clone the repository:
-```bash
-git clone https://github.com/virattt/ai-hedge-fund.git
-cd ai-hedge-fund
-```
-
-3. Set up your environment variables:
-```bash
-# Create .env file for your API keys
-cp .env.example .env
-```
-
-4. Edit the .env file to add your API keys as described above.
-
-5. Build the Docker image:
-```bash
-# On Linux/Mac:
-./run.sh build
-
-# On Windows:
-run.bat build
-```
-
-**Important**: You must set `OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, or `DEEPSEEK_API_KEY` for the hedge fund to work.  If you want to use LLMs from all providers, you will need to set all API keys.
-
-Financial data for AAPL, GOOGL, MSFT, NVDA, and TSLA is free and does not require an API key.
-
-For any other ticker, you will need to set the `FINANCIAL_DATASETS_API_KEY` in the .env file.
 
 ## Usage
 
-### Running the Hedge Fund
+### Running the Application (Backend & Frontend)
 
-#### With Poetry
+To run the full application with the interactive dashboard, start both the FastAPI backend and the React frontend.
+
+1. Start the backend server (FastAPI):
 ```bash
-poetry run python src/main.py --ticker AAPL,MSFT,NVDA
+# In one terminal
+poetry run uvicorn app.backend.main:app --reload --port 8000
 ```
 
-#### With Docker
+2. Start the frontend development server (React/Vite):
 ```bash
-# On Linux/Mac:
-./run.sh --ticker AAPL,MSFT,NVDA main
-
-# On Windows:
-run.bat --ticker AAPL,MSFT,NVDA main
+# In a second terminal
+cd app/frontend
+npm run dev
 ```
 
-**Example Output:**
-<img width="992" alt="Screenshot 2025-01-06 at 5 50 17 PM" src="https://github.com/user-attachments/assets/e8ca04bf-9989-4a7d-a8b4-34e04666663b" />
+Navigate to `http://localhost:5173` (or the port provided by Vite) in your browser to access the dashboard.
 
-You can also specify a `--ollama` flag to run the AI hedge fund using local LLMs.
+### Running the Hedge Fund (CLI)
+
+You can still run the hedge fund analysis directly from the command line. Ensure you use Yahoo Finance compatible Indian tickers (e.g., `RELIANCE.NS`).
 
 ```bash
-# With Poetry:
-poetry run python src/main.py --ticker AAPL,MSFT,NVDA --ollama
-
-# With Docker (on Linux/Mac):
-./run.sh --ticker AAPL,MSFT,NVDA --ollama main
-
-# With Docker (on Windows):
-run.bat --ticker AAPL,MSFT,NVDA --ollama main
+poetry run python src/main.py --ticker RELIANCE.NS,TCS.NS,HDFCBANK.NS
 ```
 
 You can also specify a `--show-reasoning` flag to print the reasoning of each agent to the console.
 
 ```bash
-# With Poetry:
-poetry run python src/main.py --ticker AAPL,MSFT,NVDA --show-reasoning
-
-# With Docker (on Linux/Mac):
-./run.sh --ticker AAPL,MSFT,NVDA --show-reasoning main
-
-# With Docker (on Windows):
-run.bat --ticker AAPL,MSFT,NVDA --show-reasoning main
-```
-
-You can optionally specify the start and end dates to make decisions for a specific time period.
-
-```bash
-# With Poetry:
-poetry run python src/main.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 
-
-# With Docker (on Linux/Mac):
-./run.sh --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 main
-
-# With Docker (on Windows):
-run.bat --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 main
+poetry run python src/main.py --ticker RELIANCE.NS,TCS.NS --show-reasoning
 ```
 
 ### Running the Backtester
 
-#### With Poetry
 ```bash
-poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA
+poetry run python src/backtester.py --ticker RELIANCE.NS,TCS.NS
 ```
-
-#### With Docker
-```bash
-# On Linux/Mac:
-./run.sh --ticker AAPL,MSFT,NVDA backtest
-
-# On Windows:
-run.bat --ticker AAPL,MSFT,NVDA backtest
-```
-
-**Example Output:**
-<img width="941" alt="Screenshot 2025-01-06 at 5 47 52 PM" src="https://github.com/user-attachments/assets/00e794ea-8628-44e6-9a84-8f8a31ad3b47" />
-
 
 You can optionally specify the start and end dates to backtest over a specific time period.
 
 ```bash
-# With Poetry:
-poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01
-
-# With Docker (on Linux/Mac):
-./run.sh --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 backtest
-
-# With Docker (on Windows):
-run.bat --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01 backtest
+poetry run python src/backtester.py --ticker RELIANCE.NS --start-date 2024-01-01 --end-date 2024-03-01
 ```
 
-You can also specify a `--ollama` flag to run the backtester using local LLMs.
+### Data Ingestion Pipelines
+
+Before running analysis, you may want to ingest recent data into the local database.
+
+Ingest daily prices:
 ```bash
-# With Poetry:
-poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA --ollama
-
-# With Docker (on Linux/Mac):
-./run.sh --ticker AAPL,MSFT,NVDA --ollama backtest
-
-# With Docker (on Windows):
-run.bat --ticker AAPL,MSFT,NVDA --ollama backtest
+poetry run python ingest_prices.py --wishlist "Nifty 50"
 ```
 
+Ingest fundamental data (requires Screener API):
+```bash
+poetry run python fundamentals_ingest.py --wishlist "Nifty 50"
+```
 
 ## Project Structure 
 ```
 ai-hedge-fund/
+├── app/
+│   ├── backend/              # FastAPI backend server
+│   ├── frontend/             # React/Vite interactive dashboard
 ├── src/
-│   ├── agents/                   # Agent definitions and workflow
-│   │   ├── bill_ackman.py        # Bill Ackman agent
-│   │   ├── fundamentals.py       # Fundamental analysis agent
-│   │   ├── portfolio_manager.py  # Portfolio management agent
-│   │   ├── risk_manager.py       # Risk management agent
-│   │   ├── sentiment.py          # Sentiment analysis agent
-│   │   ├── technicals.py         # Technical analysis agent
-│   │   ├── valuation.py          # Valuation analysis agent
-│   │   ├── ...                   # Other agents
-│   │   ├── warren_buffett.py     # Warren Buffett agent
-│   │   ├── aswath_damodaran.py   # Aswath Damodaran agent
-│   │   ├── ...                   # Other agents
-│   │   ├── ...                   # Other agents
-│   ├── tools/                    # Agent tools
-│   │   ├── api.py                # API tools
-│   ├── backtester.py             # Backtesting tools
-│   ├── main.py # Main entry point
+│   ├── agents/               # Agent definitions and workflow
+│   ├── db/                   # Database connection and schema
+│   ├── tools/                # Agent tools (API integrations)
+│   ├── utils/                # Utility functions
+│   ├── backtester.py         # Backtesting tools
+│   ├── main.py               # Main entry point (CLI hedge fund)
+├── pipelines/                # Recurring pipelines (e.g., weekly runs)
+├── ingest_prices.py          # Script to ingest price data
+├── fundamentals_ingest.py    # Script to ingest fundamental data
+├── hedge_fund.db             # SQLite database (generated)
 ├── pyproject.toml
 ├── ...
 ```
@@ -265,7 +250,7 @@ ai-hedge-fund/
 4. Push to the branch
 5. Create a Pull Request
 
-**Important**: Please keep your pull requests small and focused.  This will make it easier to review and merge.
+**Important**: Please keep your pull requests small and focused. This will make it easier to review and merge.
 
 ## Feature Requests
 
