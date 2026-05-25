@@ -1,7 +1,7 @@
 import { NodeStatus, OutputNodeData, useNodeContext } from '@/contexts/node-context';
 import { ModelProvider } from '@/services/types';
 
-interface HedgeFundRequest {
+export interface HedgeFundRequest {
   tickers: string[];
   selected_agents: string[];
   end_date?: string;
@@ -10,6 +10,43 @@ interface HedgeFundRequest {
   model_provider?: ModelProvider;
   initial_cash?: number;
   margin_requirement?: number;
+}
+
+export interface WeeklyPick {
+  rank: number;
+  symbol: string;
+  name: string;
+  signal: string;
+  score: number;
+  thesis: string;
+  risk_score: number;
+}
+
+export interface WeeklyRun {
+  id: number;
+  run_date: string;
+  status: string;
+  error_message?: string;
+  test_mode: boolean;
+  created_at: string;
+}
+
+export interface SimulationRunMetadata {
+  id: string;
+  created_at: string;
+  tickers: string[];
+  selected_agents: string[];
+  model_name: string;
+  model_provider: string;
+  status: string;
+}
+
+export interface SimulationRunDetail extends SimulationRunMetadata {
+  initial_cash?: number;
+  margin_requirement?: number;
+  decisions: Record<string, any> | null;
+  analyst_signals: Record<string, any> | null;
+  logs: any[];
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8008';
@@ -166,5 +203,64 @@ export const api = {
     return () => {
       controller.abort();
     };
+  },
+
+  // Weekly picks endpoints
+  getWeeklyPicksDates: async (): Promise<string[]> => {
+    const res = await fetch(`${API_BASE_URL}/weekly-picks/dates`);
+    if (!res.ok) throw new Error('Failed to fetch weekly picks dates');
+    return res.json();
+  },
+
+  getWeeklyPicks: async (date: string): Promise<WeeklyPick[]> => {
+    const res = await fetch(`${API_BASE_URL}/weekly-picks/picks/${date}`);
+    if (!res.ok) throw new Error(`Failed to fetch weekly picks for ${date}`);
+    return res.json();
+  },
+
+  getWeeklyRuns: async (): Promise<WeeklyRun[]> => {
+    const res = await fetch(`${API_BASE_URL}/weekly-picks/runs`);
+    if (!res.ok) throw new Error('Failed to fetch weekly pipeline runs');
+    return res.json();
+  },
+
+  runWeeklyPipeline: async (modelName: string, modelProvider: string, testMode: boolean): Promise<WeeklyRun> => {
+    const res = await fetch(`${API_BASE_URL}/weekly-picks/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model_name: modelName,
+        model_provider: modelProvider,
+        test_mode: testMode,
+      }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'Failed to start weekly picks pipeline');
+    }
+    return res.json();
+  },
+
+  // Simulation runs endpoints
+  getSimulationRuns: async (): Promise<SimulationRunMetadata[]> => {
+    const res = await fetch(`${API_BASE_URL}/hedge-fund/runs`);
+    if (!res.ok) throw new Error('Failed to fetch simulation runs history');
+    return res.json();
+  },
+
+  getSimulationRun: async (runId: string): Promise<SimulationRunDetail> => {
+    const res = await fetch(`${API_BASE_URL}/hedge-fund/runs/${runId}`);
+    if (!res.ok) throw new Error(`Failed to fetch simulation run details for ${runId}`);
+    return res.json();
+  },
+
+  deleteSimulationRun: async (runId: string): Promise<{ message: string }> => {
+    const res = await fetch(`${API_BASE_URL}/hedge-fund/runs/${runId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(`Failed to delete simulation run ${runId}`);
+    return res.json();
   },
 }; 

@@ -41,6 +41,7 @@ interface NodeContextType {
   updateAgentNodes: (nodeIds: string[], status: NodeStatus) => void;
   setOutputNodeData: (data: OutputNodeData) => void;
   resetAllNodes: () => void;
+  loadPastRun: (logs: any[], decisions: any, analystSignals: any) => void;
 }
 
 const NodeContext = createContext<NodeContextType | undefined>(undefined);
@@ -115,6 +116,75 @@ export function NodeProvider({ children }: { children: ReactNode }) {
     setOutputNodeData(null);
   }, []);
 
+  const loadPastRun = useCallback((logs: any[], decisions: any, analystSignals: any) => {
+    // Reset first
+    setAgentNodeData({});
+    setOutputNodeData(null);
+    
+    // Set output data if present
+    if (decisions && analystSignals) {
+      setOutputNodeData({
+        decisions,
+        analyst_signals: analystSignals
+      });
+    }
+
+    // Reconstruct agentNodeData from logs
+    const newAgentData: Record<string, AgentNodeData> = {};
+    
+    logs.forEach(event => {
+      if (event.type === 'progress' && event.agent) {
+        const nodeId = event.agent.replace('_agent', '');
+        
+        let nodeStatus: NodeStatus = 'IN_PROGRESS';
+        if (event.status === 'Done') {
+          nodeStatus = 'COMPLETE';
+        }
+        
+        const existingNode = newAgentData[nodeId] || {
+          status: 'IDLE',
+          ticker: null,
+          message: '',
+          messages: [],
+          lastUpdated: Date.now()
+        };
+        
+        const newMessages = [...existingNode.messages];
+        const msgText = `${event.status} for ${event.ticker || 'all stocks'}`;
+        
+        newMessages.push({
+          timestamp: event.timestamp || new Date().toISOString(),
+          message: msgText,
+          ticker: event.ticker
+        });
+        
+        newAgentData[nodeId] = {
+          status: nodeStatus,
+          ticker: event.ticker || null,
+          message: msgText,
+          messages: newMessages,
+          lastUpdated: Date.now()
+        };
+      }
+    });
+
+    // Mark active nodes and output node as complete if decisions are loaded
+    if (decisions) {
+      Object.keys(newAgentData).forEach(id => {
+        newAgentData[id].status = 'COMPLETE';
+      });
+      newAgentData['output'] = {
+        status: 'COMPLETE',
+        ticker: null,
+        message: 'Analysis complete',
+        messages: [],
+        lastUpdated: Date.now()
+      };
+    }
+
+    setAgentNodeData(newAgentData);
+  }, []);
+
   return (
     <NodeContext.Provider
       value={{
@@ -124,6 +194,7 @@ export function NodeProvider({ children }: { children: ReactNode }) {
         updateAgentNodes,
         setOutputNodeData,
         resetAllNodes,
+        loadPastRun,
       }}
     >
       {children}

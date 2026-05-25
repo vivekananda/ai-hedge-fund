@@ -1,7 +1,7 @@
 import pandas as pd
 from sqlalchemy.orm import Session
 from src.db.connection import engine, Base
-from src.db.models import Stock, DailyPrice, FundamentalsSnapshot, WeeklyPick
+from src.db.models import Stock, DailyPrice, FundamentalsSnapshot, WeeklyPick, WeeklyPipelineRun, SimulationRun
 
 def init_db():
     """Provision database tables if they do not exist."""
@@ -143,3 +143,112 @@ def get_weekly_picks(db: Session, week_start_date: str) -> list[WeeklyPick]:
     return db.query(WeeklyPick).filter(
         WeeklyPick.week_start_date == week_start_date
     ).order_by(WeeklyPick.rank.asc()).all()
+
+
+def create_weekly_run(db: Session, run_date: str, status: str, test_mode: bool, created_at: str) -> WeeklyPipelineRun:
+    """Create a new weekly pipeline run entry."""
+    run = WeeklyPipelineRun(
+        run_date=run_date,
+        status=status,
+        test_mode=test_mode,
+        created_at=created_at
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+def update_weekly_run(db: Session, run_id: int, status: str, error_message: str = None) -> WeeklyPipelineRun:
+    """Update status of a weekly pipeline run."""
+    run = db.query(WeeklyPipelineRun).filter(WeeklyPipelineRun.id == run_id).first()
+    if run:
+        run.status = status
+        if error_message is not None:
+            run.error_message = error_message
+        db.commit()
+        db.refresh(run)
+    return run
+
+
+def get_weekly_runs(db: Session, limit: int = 10) -> list[WeeklyPipelineRun]:
+    """Retrieve recent weekly pipeline runs."""
+    return db.query(WeeklyPipelineRun).order_by(WeeklyPipelineRun.created_at.desc()).limit(limit).all()
+
+
+def save_simulation_run(
+    db: Session,
+    run_id: str,
+    created_at: str,
+    tickers: str,
+    selected_agents: str,
+    model_name: str = None,
+    model_provider: str = None,
+    initial_cash: float = None,
+    margin_requirement: float = None,
+    status: str = "RUNNING"
+) -> SimulationRun:
+    """Create or update a simulation run entry."""
+    run = db.query(SimulationRun).filter(SimulationRun.id == run_id).first()
+    if not run:
+        run = SimulationRun(
+            id=run_id,
+            created_at=created_at,
+            tickers=tickers,
+            selected_agents=selected_agents,
+            model_name=model_name,
+            model_provider=model_provider,
+            initial_cash=initial_cash,
+            margin_requirement=margin_requirement,
+            status=status
+        )
+        db.add(run)
+    else:
+        run.status = status
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+def update_simulation_run(
+    db: Session,
+    run_id: str,
+    status: str,
+    decisions: str = None,
+    analyst_signals: str = None,
+    logs: str = None
+) -> SimulationRun:
+    """Update a simulation run with results and logs."""
+    run = db.query(SimulationRun).filter(SimulationRun.id == run_id).first()
+    if run:
+        run.status = status
+        if decisions is not None:
+            run.decisions = decisions
+        if analyst_signals is not None:
+            run.analyst_signals = analyst_signals
+        if logs is not None:
+            run.logs = logs
+        db.commit()
+        db.refresh(run)
+    return run
+
+
+def get_simulation_runs(db: Session, limit: int = 20) -> list[SimulationRun]:
+    """Retrieve list of past simulation runs."""
+    return db.query(SimulationRun).order_by(SimulationRun.created_at.desc()).limit(limit).all()
+
+
+def get_simulation_run(db: Session, run_id: str) -> SimulationRun:
+    """Retrieve full details of a specific simulation run."""
+    return db.query(SimulationRun).filter(SimulationRun.id == run_id).first()
+
+
+def delete_simulation_run(db: Session, run_id: str) -> bool:
+    """Delete a simulation run."""
+    run = db.query(SimulationRun).filter(SimulationRun.id == run_id).first()
+    if run:
+        db.delete(run)
+        db.commit()
+        return True
+    return False
+

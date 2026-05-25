@@ -11,8 +11,8 @@ type LayoutProps = {
   leftSidebar?: ReactNode;
   rightSidebar?: ReactNode;
   children: ReactNode;
-  activeTab: 'simulation' | 'screener';
-  onTabChange: (tab: 'simulation' | 'screener') => void;
+  activeTab: 'simulation' | 'screener' | 'weekly-picks';
+  onTabChange: (tab: 'simulation' | 'screener' | 'weekly-picks') => void;
 };
 
 export function Layout({ leftSidebar, rightSidebar, children, activeTab, onTabChange }: LayoutProps) {
@@ -55,6 +55,17 @@ export function Layout({ leftSidebar, rightSidebar, children, activeTab, onTabCh
               )}
             >
               Market Screener
+            </button>
+            <button
+              onClick={() => onTabChange('weekly-picks')}
+              className={cn(
+                "px-5 py-2 text-xs font-semibold rounded-md transition-all duration-200",
+                activeTab === 'weekly-picks' 
+                  ? "bg-ramp-grey-800 text-white shadow-md border border-ramp-grey-700" 
+                  : "text-gray-400 hover:text-white"
+              )}
+            >
+              Weekly Picks
             </button>
           </div>
           

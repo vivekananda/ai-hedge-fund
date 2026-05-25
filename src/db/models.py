@@ -62,3 +62,32 @@ class WeeklyPick(Base):
     risk_score = Column(Float, nullable=True) # Qualitative risk score
 
     stock = relationship("Stock", back_populates="weekly_picks")
+
+
+class WeeklyPipelineRun(Base):
+    __tablename__ = "weekly_pipeline_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_date = Column(String, nullable=False, index=True)  # YYYY-MM-DD
+    status = Column(String, nullable=False)                 # RUNNING, COMPLETED, FAILED
+    error_message = Column(Text, nullable=True)
+    test_mode = Column(Boolean, default=False)
+    created_at = Column(String, nullable=False)             # ISO timestamp
+
+
+class SimulationRun(Base):
+    __tablename__ = "simulation_runs"
+
+    id = Column(String, primary_key=True, index=True)       # UUID
+    created_at = Column(String, nullable=False)             # ISO timestamp
+    tickers = Column(Text, nullable=False)                  # Comma-separated
+    selected_agents = Column(Text, nullable=False)          # Comma-separated
+    model_name = Column(String, nullable=True)
+    model_provider = Column(String, nullable=True)
+    initial_cash = Column(Float, nullable=True)
+    margin_requirement = Column(Float, nullable=True)
+    status = Column(String, nullable=False)                 # RUNNING, COMPLETE, ERROR
+    decisions = Column(Text, nullable=True)                 # JSON string
+    analyst_signals = Column(Text, nullable=True)           # JSON string
+    logs = Column(Text, nullable=True)                      # JSON list of progress events
+

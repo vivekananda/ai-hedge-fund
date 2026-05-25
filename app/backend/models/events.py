@@ -17,6 +17,7 @@ class StartEvent(BaseEvent):
     """Event indicating the start of processing"""
 
     type: Literal["start"] = "start"
+    run_id: Optional[str] = None
     timestamp: Optional[str] = None
 
 class ProgressUpdateEvent(BaseEvent):
