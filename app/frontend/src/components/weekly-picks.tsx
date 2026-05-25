@@ -21,10 +21,7 @@ export function WeeklyPicksDashboard() {
     addTickerToActive,
     removeTickerFromActive,
     isInActiveWatchlist,
-    runSimulationOnActive,
-    setActiveTab,
-    setSimulationTickers,
-    setPendingAutoRun
+    runSimulationOnActive
   } = useWatchlist();
 
   const [isCreatingList, setIsCreatingList] = useState(false);
@@ -541,77 +538,100 @@ export function WeeklyPicksDashboard() {
                     </div>
                     
                     {/* Thesis & metrics */}
-                    <CardContent className="p-4 flex-1 flex flex-col gap-4">
-                      {/* Metrics Row */}
-                      <div className="grid grid-cols-2 gap-3 bg-ramp-grey-950/50 p-2.5 rounded-lg border border-ramp-grey-800/40 text-xs">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wider">Confidence Score</span>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
-                              <div 
-                                className="bg-gradient-to-r from-cyan-400 to-indigo-500 h-1.5 rounded-full" 
-                                style={{ width: `${pick.score}%` }}
-                              />
+                    <CardContent className="p-4 flex-1 flex flex-col justify-between">
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
+                        {/* Left Column: Metrics & Fundamentals (5 cols) */}
+                        <div className="md:col-span-5 flex flex-col justify-between gap-3 h-full">
+                          <div className="space-y-3">
+                            {/* Confidence & Risk */}
+                            <div className="grid grid-cols-2 gap-2 bg-ramp-grey-950/50 p-2.5 rounded-lg border border-ramp-grey-800/40 text-xs">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Confidence</span>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="font-bold text-gray-200 text-xs leading-none">{pick.score}%</span>
+                                  <div className="w-10 bg-gray-800 rounded-full h-1 overflow-hidden">
+                                    <div 
+                                      className="bg-gradient-to-r from-cyan-400 to-indigo-500 h-1 rounded-full" 
+                                      style={{ width: `${pick.score}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-0.5 border-l border-ramp-grey-800/40 pl-2.5">
+                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Risk Rating</span>
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <span className="font-bold text-gray-200 text-xs leading-none">{pick.risk_score}/10</span>
+                                  <span className="text-[9px] text-gray-400 font-medium">
+                                    {pick.risk_score <= 3 ? '(Low)' : pick.risk_score <= 6 ? '(Med)' : '(High)'}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                            <span className="font-semibold text-gray-300">{pick.score}%</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wider">Risk Rating</span>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="font-semibold text-gray-200">{pick.risk_score}/10</span>
-                            <span className="text-[10px] text-gray-400">
-                              {pick.risk_score <= 3 ? '(Low)' : pick.risk_score <= 6 ? '(Med)' : '(High)'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
 
-                      {(() => {
-                        const stockDetail = stocks.find(s => s.symbol === pick.symbol);
-                        return stockDetail ? (
-                          <div className="flex flex-col gap-1 border-t border-ramp-grey-800/40 pt-2 mt-2 text-[10px] text-gray-400">
-                            <div className="flex justify-between">
-                              <span>Market Cap</span>
-                              <span className="font-semibold text-gray-300">
-                                {formatMarketCap(stockDetail.fundamentals?.market_cap)}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>P/E Ratio</span>
-                              <span className="font-semibold text-gray-300">
-                                {stockDetail.fundamentals?.pe_ratio ? stockDetail.fundamentals.pe_ratio.toFixed(1) : '—'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>ROE %</span>
-                              <span className="font-semibold text-gray-300">
-                                {stockDetail.fundamentals?.roe ? `${stockDetail.fundamentals.roe.toFixed(1)}%` : '—'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Sector</span>
-                              <span className="font-semibold text-gray-300">
-                                {stockDetail.sector || '—'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>1Y Return</span>
-                              <span className={`font-semibold ${stockDetail.performance_1y && stockDetail.performance_1y >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                {formatPercent(stockDetail.performance_1y)}
-                              </span>
-                            </div>
+                            {/* Fundamental Ratios Grid */}
+                            {(() => {
+                              const stockDetail = stocks.find(s => s.symbol === pick.symbol);
+                              if (!stockDetail) return (
+                                <div className="text-[10px] text-gray-500 italic p-4 text-center bg-ramp-grey-950/20 border border-ramp-grey-800/40 rounded-lg">
+                                  No fundamental ratios cached.
+                                </div>
+                              );
+                              return (
+                                <div className="grid grid-cols-2 gap-2 text-[10px] text-gray-400">
+                                  <div className="bg-ramp-grey-950/40 border border-ramp-grey-800/30 rounded-lg p-2 flex flex-col justify-between">
+                                    <span className="text-[9px] text-gray-500 uppercase font-semibold">Market Cap</span>
+                                    <span className="font-bold text-gray-200 mt-1">
+                                      {formatMarketCap(stockDetail.fundamentals?.market_cap)}
+                                    </span>
+                                  </div>
+                                  <div className="bg-ramp-grey-950/40 border border-ramp-grey-800/30 rounded-lg p-2 flex flex-col justify-between">
+                                    <span className="text-[9px] text-gray-500 uppercase font-semibold">1Y Return</span>
+                                    <span className={`font-bold mt-1 ${stockDetail.performance_1y && stockDetail.performance_1y >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                      {formatPercent(stockDetail.performance_1y)}
+                                    </span>
+                                  </div>
+                                  <div className="bg-ramp-grey-950/40 border border-ramp-grey-800/30 rounded-lg p-2 flex flex-col justify-between">
+                                    <span className="text-[9px] text-gray-500 uppercase font-semibold">P/E Ratio</span>
+                                    <span className="font-bold text-gray-200 mt-1">
+                                      {stockDetail.fundamentals?.pe_ratio ? stockDetail.fundamentals.pe_ratio.toFixed(1) : '—'}
+                                    </span>
+                                  </div>
+                                  <div className="bg-ramp-grey-950/40 border border-ramp-grey-800/30 rounded-lg p-2 flex flex-col justify-between">
+                                    <span className="text-[9px] text-gray-500 uppercase font-semibold">ROE %</span>
+                                    <span className="font-bold text-gray-200 mt-1">
+                                      {stockDetail.fundamentals?.roe ? `${stockDetail.fundamentals.roe.toFixed(1)}%` : '—'}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
-                        ) : null;
-                      })()}
-                      
-                      {/* Qualitative Thesis */}
-                      <div className="flex-grow">
-                        <span className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold block mb-1.5">Qualitative Thesis</span>
-                        <p 
-                          className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap bg-ramp-grey-950 p-3 rounded-lg border border-ramp-grey-800/50"
-                          dangerouslySetInnerHTML={{ __html: pick.thesis }}
-                        />
+
+                          {/* Sector at the bottom of left column */}
+                          {(() => {
+                            const stockDetail = stocks.find(s => s.symbol === pick.symbol);
+                            if (!stockDetail || !stockDetail.sector) return null;
+                            return (
+                              <div className="text-[10px] text-gray-500 mt-auto border-t border-ramp-grey-800/40 pt-2 flex items-center justify-between">
+                                <span>Sector</span>
+                                <span className="font-semibold text-gray-300 truncate max-w-[125px]" title={stockDetail.sector}>
+                                  {stockDetail.sector}
+                                </span>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Right Column: Qualitative Thesis (7 cols) */}
+                        <div className="md:col-span-7 flex flex-col h-full justify-between gap-1.5">
+                          <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold block">Qualitative Thesis</span>
+                          <div className="flex-1 min-h-[140px] max-h-[185px] overflow-y-auto bg-ramp-grey-950 p-2.5 rounded-lg border border-ramp-grey-800/50 scrollbar-thin scrollbar-thumb-ramp-grey-800 text-[11px] text-gray-300 leading-relaxed">
+                            <div 
+                              className="whitespace-pre-wrap"
+                              dangerouslySetInnerHTML={{ __html: pick.thesis }}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

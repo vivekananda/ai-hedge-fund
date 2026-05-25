@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { History, Loader2, Trash2, FolderOpen, AlertCircle, RefreshCw } from 'lucide-react';
+import { History, Loader2, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { useNodeContext } from '@/contexts/node-context';
@@ -125,7 +125,6 @@ export function RightSidebar() {
           runs.map((run) => {
             const isCompleted = run.status === 'COMPLETE';
             const isFailed = run.status === 'ERROR';
-            const isProcessing = run.status === 'RUNNING';
             
             return (
               <Card 

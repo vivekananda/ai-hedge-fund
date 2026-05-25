@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, ChevronRight, X, Loader2, TrendingUp, TrendingDown, Activity, Plus, PlusCircle, MinusCircle, ListPlus, Trash2, Play, Settings, ExternalLink } from 'lucide-react';
+import { Search, ChevronRight, X, Loader2, TrendingUp, TrendingDown, Activity, Plus, ListPlus, Trash2, Play, Settings, ExternalLink } from 'lucide-react';
 import { useWatchlist } from '@/contexts/watchlist-context';
 import { ModelSelector } from './ui/llm-selector';
 import { apiModels } from '@/data/models';
@@ -66,9 +66,6 @@ export function Screener() {
     activeWatchlist,
     selectedModel,
     setSelectedModel,
-    setActiveTab,
-    setSimulationTickers,
-    setPendingAutoRun,
     createWatchlist,
     deleteWatchlist,
     setActiveWatchlistName,
@@ -518,7 +515,7 @@ export function Screener() {
                         <div
                           key={stock.symbol}
                           onClick={() => setSelectedStock(stock)}
-                          className={`bg-ramp-grey-900 border ${selectedStock?.symbol === stock.symbol ? 'border-cyan-500 shadow-cyan-500/5 ring-1 ring-cyan-500/20' : 'border-ramp-grey-800 hover:border-ramp-grey-700'} rounded-xl p-4 transition-all duration-200 cursor-pointer hover:shadow-lg flex flex-col justify-between h-40`}
+                          className={`bg-ramp-grey-900 border ${selectedStock?.symbol === stock.symbol ? 'border-cyan-500 shadow-cyan-500/5 ring-1 ring-cyan-500/20' : 'border-ramp-grey-800 hover:border-ramp-grey-700'} rounded-xl p-4 transition-all duration-200 cursor-pointer hover:shadow-lg flex flex-col justify-between h-[135px]`}
                         >
                           <div className="flex justify-between items-start">
                             <div className="flex items-center gap-2 min-w-0">
@@ -550,30 +547,30 @@ export function Screener() {
                             </span>
                           </div>
 
-                          <div className="flex flex-col gap-1 border-t border-ramp-grey-950 pt-2 mt-2">
-                            <div className="flex justify-between text-[10px] text-gray-400">
-                              <span>Market Cap</span>
-                              <span className="font-semibold text-gray-300">
+                          <div className="grid grid-cols-3 gap-2 border-t border-ramp-grey-950 pt-2.5 mt-2">
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                              <span className="text-[9px] text-gray-500 uppercase tracking-wider font-semibold">Mkt Cap</span>
+                              <span className="font-bold text-gray-300 text-[11px] truncate">
                                 {formatMarketCap(stock.fundamentals?.market_cap ?? null)}
                               </span>
                             </div>
-                            <div className="flex justify-between text-[10px] text-gray-400">
-                              <span>P/E Ratio</span>
-                              <span className="font-semibold text-gray-300">
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                              <span className="text-[9px] text-gray-500 uppercase tracking-wider font-semibold">P/E Ratio</span>
+                              <span className="font-bold text-gray-300 text-[11px]">
                                 {stock.fundamentals?.pe_ratio ? stock.fundamentals.pe_ratio.toFixed(1) : '—'}
                               </span>
                             </div>
-                            <div className="flex justify-between text-[10px] text-gray-400">
-                              <span>ROE %</span>
-                              <span className="font-semibold text-gray-300">
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                              <span className="text-[9px] text-gray-500 uppercase tracking-wider font-semibold">ROE %</span>
+                              <span className="font-bold text-gray-300 text-[11px]">
                                 {stock.fundamentals?.roe ? `${stock.fundamentals.roe.toFixed(1)}%` : '—'}
                               </span>
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between text-[9px] text-gray-500 mt-2">
-                            <span>{stock.sector || 'Unassigned'}</span>
-                            <span className="text-cyan-400 font-semibold flex items-center gap-0.5 hover:underline">
+                          <div className="flex items-center justify-between text-[9px] text-gray-500 mt-2 pt-1 border-t border-ramp-grey-950/40">
+                            <span className="truncate max-w-[140px]">{stock.sector || 'Unassigned'}</span>
+                            <span className="text-cyan-400 font-semibold flex items-center gap-0.5 hover:underline flex-shrink-0">
                               View details <ChevronRight size={10} />
                             </span>
                           </div>
