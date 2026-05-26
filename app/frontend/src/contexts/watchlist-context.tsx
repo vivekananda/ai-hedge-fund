@@ -26,6 +26,7 @@ interface WatchlistContextType {
   removeTickerFromActive: (ticker: string) => Promise<void>;
   isInActiveWatchlist: (ticker: string) => boolean;
   runSimulationOnActive: (model: ModelItem | null) => void;
+  runSimulationOnTicker: (ticker: string, model: ModelItem | null) => void;
 }
 
 const WatchlistContext = createContext<WatchlistContextType | undefined>(undefined);
@@ -171,6 +172,18 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     setActiveTab('simulation');
   };
 
+  // Fire simulation run on a single ticker
+  const runSimulationOnTicker = useCallback((ticker: string, model: ModelItem | null) => {
+    setSimulationTickers(ticker);
+    if (model) {
+      setSelectedModel(model);
+    }
+    
+    // Set auto-run flag and route to workspace
+    setPendingAutoRun(true);
+    setActiveTab('simulation');
+  }, []);
+
   return (
     <WatchlistContext.Provider
       value={{
@@ -192,7 +205,8 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         addTickerToActive,
         removeTickerFromActive,
         isInActiveWatchlist,
-        runSimulationOnActive
+        runSimulationOnActive,
+        runSimulationOnTicker
       }}
     >
       {children}

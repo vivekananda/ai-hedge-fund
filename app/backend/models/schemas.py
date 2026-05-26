@@ -48,6 +48,9 @@ class StockResponse(BaseModel):
     sector: Optional[str] = None
     performance_1y: Optional[float] = None
     fundamentals: Optional[StockFundamental] = None
+    rs_rating: Optional[float] = None
+    is_minervini_trend: Optional[bool] = None
+    is_canslim: Optional[bool] = None
 
 
 class StockPrice(BaseModel):

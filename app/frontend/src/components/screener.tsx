@@ -21,6 +21,9 @@ interface Stock {
   sector: string | null;
   performance_1y: number | null;
   fundamentals: StockFundamental | null;
+  rs_rating?: number | null;
+  is_minervini_trend?: boolean | null;
+  is_canslim?: boolean | null;
 }
 
 interface PricePoint {
@@ -44,6 +47,7 @@ export function Screener() {
   const [selectedSector, setSelectedSector] = useState('All');
   const [minPerf, setMinPerf] = useState<string>('All');
   const [peFilter, setPeFilter] = useState<string>('All');
+  const [strategyFilter, setStrategyFilter] = useState<string>('All');
   
   // Sorting state
   const sortField = 'market_cap';
@@ -72,7 +76,8 @@ export function Screener() {
     addTickerToActive,
     removeTickerFromActive,
     isInActiveWatchlist,
-    runSimulationOnActive
+    runSimulationOnActive,
+    runSimulationOnTicker
   } = useWatchlist();
 
   const [isCreatingList, setIsCreatingList] = useState(false);
@@ -169,6 +174,15 @@ export function Screener() {
         result = result.filter(s => s.fundamentals?.pe_ratio && s.fundamentals.pe_ratio >= 40);
       }
     }
+
+    // Strategy Filter
+    if (strategyFilter !== 'All') {
+      if (strategyFilter === 'minervini') {
+        result = result.filter(s => s.is_minervini_trend);
+      } else if (strategyFilter === 'canslim') {
+        result = result.filter(s => s.is_canslim);
+      }
+    }
     
     // Sorting
     result.sort((a, b) => {
@@ -194,7 +208,7 @@ export function Screener() {
     });
     
     return result;
-  }, [stocks, search, selectedSector, minPerf, peFilter, sortField, sortAsc]);
+  }, [stocks, search, selectedSector, minPerf, peFilter, strategyFilter, sortField, sortAsc]);
 
   // Paginated Stocks
   const paginatedStocks = useMemo(() => {
@@ -468,6 +482,19 @@ export function Screener() {
                 <option value="growth">P/E &gt; 40 (Growth)</option>
               </select>
             </div>
+
+            {/* Strategy Preset Select */}
+            <div className="w-full md:w-44">
+              <select
+                value={strategyFilter}
+                onChange={e => { setStrategyFilter(e.target.value); setPage(1); }}
+                className="w-full bg-ramp-grey-1000 border border-ramp-grey-800 rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20"
+              >
+                <option value="All">All Preset Strategies</option>
+                <option value="minervini">Minervini Stage 2</option>
+                <option value="canslim">CANSLIM Leaders</option>
+              </select>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 self-end md:self-auto text-xs text-gray-400">
@@ -542,9 +569,16 @@ export function Screener() {
                                 </h4>
                               </div>
                             </div>
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${isPositive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                              {formatPercent(stock.performance_1y)}
-                            </span>
+                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isPositive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                {formatPercent(stock.performance_1y)}
+                              </span>
+                              {stock.rs_rating !== undefined && stock.rs_rating !== null && (
+                                <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 leading-none" title="Relative Strength Rating (1-99)">
+                                  RS {Math.round(stock.rs_rating)}
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-3 gap-2 border-t border-ramp-grey-950 pt-2.5 mt-2">
@@ -751,9 +785,26 @@ export function Screener() {
             {/* Drawer Header */}
             <div className="p-5 border-b border-ramp-grey-800 flex justify-between items-start flex-shrink-0 bg-ramp-grey-900/50 backdrop-blur-md">
               <div>
-                <span className="inline-block text-xs font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded mb-2">
-                  {selectedStock.sector || 'Unassigned Sector'}
-                </span>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <span className="inline-block text-xs font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded">
+                    {selectedStock.sector || 'Unassigned Sector'}
+                  </span>
+                  {selectedStock.rs_rating !== undefined && selectedStock.rs_rating !== null && (
+                    <span className="inline-block text-xs font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20" title="Relative Strength Rating (1-99)">
+                      RS {Math.round(selectedStock.rs_rating)}
+                    </span>
+                  )}
+                  {selectedStock.is_minervini_trend && (
+                    <span className="inline-block text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      Minervini Stage 2
+                    </span>
+                  )}
+                  {selectedStock.is_canslim && (
+                    <span className="inline-block text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      CANSLIM Leader
+                    </span>
+                  )}
+                </div>
                 <h2 className="text-white text-lg font-bold leading-tight flex items-center gap-2">
                   {selectedStock.symbol.replace('.NS', '')}
                   <a 
@@ -779,7 +830,24 @@ export function Screener() {
             {/* Drawer Content */}
             <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin scrollbar-thumb-ramp-grey-800">
               
-
+              {/* Quick AI Analyze shortcut */}
+              <div className="bg-ramp-grey-950/60 border border-ramp-grey-800/60 rounded-xl p-4.5 flex flex-col gap-2.5 shadow-md">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-cyan-400 uppercase tracking-wider font-bold block leading-none">AI Agent Workspace</span>
+                </div>
+                <p className="text-[11px] text-gray-400 leading-normal">
+                  Instantly switch to the Simulation workspace and run multi-agent analyses on this stock.
+                </p>
+                <button
+                  onClick={() => {
+                    runSimulationOnTicker(selectedStock.symbol, selectedModel);
+                    setSelectedStock(null);
+                  }}
+                  className="w-full bg-gradient-to-tr from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold py-2 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98]"
+                >
+                  <Play size={13} className="fill-current" /> Analyze with AI Agents
+                </button>
+              </div>
 
               {/* Glowing SVG Price Chart */}
               <div>

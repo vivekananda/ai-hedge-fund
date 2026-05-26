@@ -101,11 +101,11 @@ def call_llm(
                 progress.update_status(agent_name, None, f"Error - retry {attempt + 1}/{max_retries}")
 
             if attempt == max_retries - 1:
-                print(f"Error in LLM call after {max_retries} attempts: {e}")
-                # Use default_factory if provided, otherwise create a basic default
-                if default_factory:
-                    return default_factory()
-                return create_default_response(pydantic_model)
+                error_msg = f"Error in LLM call after {max_retries} attempts: {e}"
+                print(error_msg)
+                if agent_name:
+                    progress.update_status(agent_name, None, f"Error: {e}")
+                raise RuntimeError(error_msg) from e
 
     # This should never be reached due to the retry logic above
     return create_default_response(pydantic_model)

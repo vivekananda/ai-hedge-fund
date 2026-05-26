@@ -21,7 +21,8 @@ export function WeeklyPicksDashboard() {
     addTickerToActive,
     removeTickerFromActive,
     isInActiveWatchlist,
-    runSimulationOnActive
+    runSimulationOnActive,
+    runSimulationOnTicker
   } = useWatchlist();
 
   const [isCreatingList, setIsCreatingList] = useState(false);
@@ -447,6 +448,42 @@ export function WeeklyPicksDashboard() {
                 <span className="font-bold text-white">{dates.length > 0 ? formatDate(dates[0]) : 'Never'}</span>
               </div>
             </div>
+
+            <div className="border-t border-ramp-grey-800 pt-4 space-y-2">
+              <span className="text-xs text-gray-400 font-semibold tracking-wider uppercase block">Pipeline Execution Log</span>
+              {activeRuns.length === 0 ? (
+                <p className="text-[10px] text-gray-500 italic text-center py-2">No pipeline run history</p>
+              ) : (
+                <div className="flex flex-col gap-2 max-h-[160px] overflow-y-auto scrollbar-thin scrollbar-thumb-ramp-grey-800 pr-1">
+                  {activeRuns.slice(0, 4).map((run) => {
+                    const statusColor = run.status === 'COMPLETED' ? 'text-emerald-400 bg-emerald-500/10' :
+                                      run.status === 'FAILED' ? 'text-rose-400 bg-rose-500/10' :
+                                      'text-cyan-400 bg-cyan-500/10 animate-pulse';
+                    return (
+                      <div key={run.id} className="bg-ramp-grey-950 border border-ramp-grey-850 rounded-lg p-2 text-[10px] space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-gray-200">
+                            {new Date(run.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} {new Date(run.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded font-mono font-semibold uppercase text-[8px] ${statusColor}`}>
+                            {run.status}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-gray-400 text-[9px]">
+                          <span>List: {run.watchlist_name || 'Nifty 500'}</span>
+                          <span>{run.test_mode ? 'Speed' : 'Full'}</span>
+                        </div>
+                        {run.status === 'FAILED' && run.error_message && (
+                          <p className="text-rose-400 font-mono text-[8px] bg-red-950/20 p-1 rounded border border-red-900/20 max-w-full break-words mt-1 leading-normal">
+                            Error: {run.error_message}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -786,9 +823,26 @@ export function WeeklyPicksDashboard() {
             {/* Drawer Header */}
             <div className="p-5 border-b border-ramp-grey-800 flex justify-between items-start flex-shrink-0 bg-ramp-grey-900/50 backdrop-blur-md">
               <div>
-                <span className="inline-block text-xs font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded mb-2">
-                  {selectedStock.sector || 'Unassigned Sector'}
-                </span>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <span className="inline-block text-xs font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded">
+                    {selectedStock.sector || 'Unassigned Sector'}
+                  </span>
+                  {selectedStock.rs_rating !== undefined && selectedStock.rs_rating !== null && (
+                    <span className="inline-block text-xs font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20" title="Relative Strength Rating (1-99)">
+                      RS {Math.round(selectedStock.rs_rating)}
+                    </span>
+                  )}
+                  {selectedStock.is_minervini_trend && (
+                    <span className="inline-block text-xs font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      Minervini Stage 2
+                    </span>
+                  )}
+                  {selectedStock.is_canslim && (
+                    <span className="inline-block text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      CANSLIM Leader
+                    </span>
+                  )}
+                </div>
                 <h2 className="text-white text-lg font-bold leading-tight flex items-center gap-2">
                   {selectedStock.symbol.replace('.NS', '')}
                   <a 
@@ -814,7 +868,24 @@ export function WeeklyPicksDashboard() {
             {/* Drawer Content */}
             <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin scrollbar-thumb-ramp-grey-800">
               
-
+              {/* Quick AI Analyze shortcut */}
+              <div className="bg-ramp-grey-950/60 border border-ramp-grey-800/60 rounded-xl p-4.5 flex flex-col gap-2.5 shadow-md">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-cyan-400 uppercase tracking-wider font-bold block leading-none">AI Agent Workspace</span>
+                </div>
+                <p className="text-[11px] text-gray-400 leading-normal">
+                  Instantly switch to the Simulation workspace and run multi-agent analyses on this stock.
+                </p>
+                <Button
+                  onClick={() => {
+                    runSimulationOnTicker(selectedStock.symbol, selectedModel);
+                    setSelectedStock(null);
+                  }}
+                  className="w-full bg-gradient-to-tr from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold py-2 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98]"
+                >
+                  <Play size={13} className="fill-current" /> Analyze with AI Agents
+                </Button>
+              </div>
 
               {/* Glowing SVG Price Chart */}
               <div>
