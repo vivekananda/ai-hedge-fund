@@ -1,15 +1,22 @@
 import datetime
+import logging
 import os
 import pandas as pd
 import yfinance as yf
 from sqlalchemy.orm import Session
+import requests
+import time
+
+logger = logging.getLogger(__name__)
 
 from src.db.connection import SessionLocal
 from src.db.queries import get_daily_prices, save_daily_prices, get_fundamentals, get_all_stocks
 from src.data.yfinance_client import fetch_yfinance_prices, clean_ticker
+from src.data.cache import get_cache
 from src.data.models import (
     CompanyNews,
     CompanyNewsResponse,
+    CompanyFactsResponse,
     FinancialMetrics,
     FinancialMetricsResponse,
     Price,
@@ -20,16 +27,59 @@ from src.data.models import (
     InsiderTradeResponse,
 )
 
-def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
-    """Fetch price data from local SQLite db, falling back to yfinance if not available."""
+# Global cache instance
+_cache = get_cache()
+
+
+def _make_api_request(url: str, headers: dict, method: str = "GET", json_data: dict = None, max_retries: int = 3) -> requests.Response:
+    """
+    Make an API request with rate limiting handling and moderate backoff.
+    """
+    for attempt in range(max_retries + 1):  # +1 for initial attempt
+        if method.upper() == "POST":
+            response = requests.post(url, headers=headers, json=json_data)
+        else:
+            response = requests.get(url, headers=headers)
+        
+        if response.status_code == 429 and attempt < max_retries:
+            # Linear backoff: 60s, 90s, 120s, 150s...
+            delay = 60 + (30 * attempt)
+            print(f"Rate limited (429). Attempt {attempt + 1}/{max_retries + 1}. Waiting {delay}s before retrying...")
+            time.sleep(delay)
+            continue
+        
+        # Return the response (whether success, other errors, or final 429)
+        return response
+
+
+def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None) -> list[Price]:
+    """Fetch price data from cache, API, or local SQLite db/yfinance fallback."""
+    # 1. Try financialdatasets API if key is present
+    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
+    if financial_api_key:
+        cache_key = f"{ticker}_{start_date}_{end_date}"
+        if cached_data := _cache.get_prices(cache_key):
+            return [Price(**price) for price in cached_data]
+            
+        headers = {"X-API-KEY": financial_api_key}
+        url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
+        try:
+            response = _make_api_request(url, headers)
+            if response.status_code == 200:
+                price_response = PriceResponse(**response.json())
+                prices = price_response.prices
+                if prices:
+                    _cache.set_prices(cache_key, [p.model_dump() for p in prices])
+                    return prices
+        except Exception as e:
+            logger.warning("Failed to fetch prices from API for %s: %s. Falling back to local/yfinance.", ticker, e)
+
+    # 2. Local DB / yfinance fallback
     formatted_ticker = clean_ticker(ticker)
     db = SessionLocal()
     try:
         # Retrieve from database
         prices_df = get_daily_prices(db, formatted_ticker, start_date, end_date)
-        
-        # Check if we have complete price data for the range
-        # Simple heuristic: if we have 0 prices or the start/end bounds are missing by > 4 days, fetch from yfinance
         needs_fetch = False
         if prices_df.empty:
             needs_fetch = True
@@ -38,7 +88,6 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
             min_date = dates.min().strftime("%Y-%m-%d")
             max_date = dates.max().strftime("%Y-%m-%d")
             
-            # If requested range is outside cached range, fetch
             start_dt = datetime.datetime.strptime(start_date, "%Y-%m-%d")
             end_dt = datetime.datetime.strptime(end_date, "%Y-%m-%d")
             min_cached_dt = datetime.datetime.strptime(min_date, "%Y-%m-%d")
@@ -80,8 +129,30 @@ def get_financial_metrics(
     end_date: str,
     period: str = "ttm",
     limit: int = 10,
+    api_key: str = None,
 ) -> list[FinancialMetrics]:
-    """Fetch financial metrics from Screener.in data (local DB) or yfinance fallback."""
+    """Fetch financial metrics from cache, API, or local Screener.in / yfinance fallback."""
+    # 1. Try financialdatasets API if key is present
+    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
+    if financial_api_key:
+        cache_key = f"{ticker}_{period}_{end_date}_{limit}"
+        if cached_data := _cache.get_financial_metrics(cache_key):
+            return [FinancialMetrics(**metric) for metric in cached_data]
+            
+        headers = {"X-API-KEY": financial_api_key}
+        url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
+        try:
+            response = _make_api_request(url, headers)
+            if response.status_code == 200:
+                metrics_response = FinancialMetricsResponse(**response.json())
+                financial_metrics = metrics_response.financial_metrics
+                if financial_metrics:
+                    _cache.set_financial_metrics(cache_key, [m.model_dump() for m in financial_metrics])
+                    return financial_metrics
+        except Exception as e:
+            logger.warning("Failed to fetch financial metrics from API for %s: %s. Falling back to local/yfinance.", ticker, e)
+
+    # 2. Local Screener.in DB / yfinance fallback
     formatted_ticker = clean_ticker(ticker)
     db = SessionLocal()
     try:
@@ -123,11 +194,8 @@ def get_financial_metrics(
                 print(f"Error fetching info from yfinance for {formatted_ticker}: {e}")
 
         # Construct FinancialMetrics models.
-        # Since Valuation Agent checks historical consistency (limit > 1), we mock historical entries
-        # by replicating the latest snapshot with slight variations or returning a list.
         metrics_list = []
         for i in range(min(limit, 5)):
-            # Create simulated historical values to avoid agent failures if limit > 1 is requested
             factor = 1.0 - (i * 0.02)  # slightly decrease older values
             metrics_list.append(FinancialMetrics(
                 ticker=formatted_ticker,
@@ -139,7 +207,7 @@ def get_financial_metrics(
                 price_to_earnings_ratio=pe_ratio,
                 price_to_book_ratio=pb_ratio,
                 price_to_sales_ratio=None,
-                enterprise_value_to_ebitda_ratio=pe_ratio * 0.8 if pe_ratio else None, # approximate
+                enterprise_value_to_ebitda_ratio=pe_ratio * 0.8 if pe_ratio else None,
                 enterprise_value_to_revenue_ratio=None,
                 free_cash_flow_yield=None,
                 peg_ratio=None,
@@ -185,11 +253,36 @@ def search_line_items(
     end_date: str,
     period: str = "ttm",
     limit: int = 10,
+    api_key: str = None,
 ) -> list[LineItem]:
-    """Fetch line items (Net Income, FCF, Capex, etc.) from yfinance financial statements."""
+    """Fetch line items from cache, API, or yfinance fallback."""
+    # 1. Try financialdatasets API if key is present
+    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
+    if financial_api_key:
+        headers = {"X-API-KEY": financial_api_key}
+        url = "https://api.financialdatasets.ai/financials/search/line-items"
+        body = {
+            "tickers": [ticker],
+            "line_items": line_items,
+            "end_date": end_date,
+            "period": period,
+            "limit": limit,
+        }
+        try:
+            response = _make_api_request(url, headers, method="POST", json_data=body)
+            if response.status_code == 200:
+                data = response.json()
+                response_model = LineItemResponse(**data)
+                search_results = response_model.search_results
+                if search_results:
+                    return search_results[:limit]
+        except Exception as e:
+            logger.warning("Failed to fetch line items from API for %s: %s. Falling back to yfinance/local.", ticker, e)
+
+    # 2. yfinance / local DB fallback
     formatted_ticker = clean_ticker(ticker)
     
-    # Let's query yfinance financials
+    # Query yfinance financials
     try:
         t_obj = yf.Ticker(formatted_ticker)
         cashflow = t_obj.cashflow
@@ -314,8 +407,49 @@ def get_insider_trades(
     end_date: str,
     start_date: str | None = None,
     limit: int = 1000,
+    api_key: str = None,
 ) -> list[InsiderTrade]:
-    """Mock insider trades for Indian market since yfinance doesn't provide them natively."""
+    """Fetch insider trades from cache, API, or return mock empty list."""
+    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
+    if financial_api_key:
+        cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{limit}"
+        if cached_data := _cache.get_insider_trades(cache_key):
+            return [InsiderTrade(**trade) for trade in cached_data]
+
+        headers = {"X-API-KEY": financial_api_key}
+        all_trades = []
+        current_end_date = end_date
+        try:
+            while True:
+                url = f"https://api.financialdatasets.ai/insider-trades/?ticker={ticker}&filing_date_lte={current_end_date}"
+                if start_date:
+                    url += f"&filing_date_gte={start_date}"
+                url += f"&limit={limit}"
+
+                response = _make_api_request(url, headers)
+                if response.status_code != 200:
+                    break
+
+                data = response.json()
+                response_model = InsiderTradeResponse(**data)
+                insider_trades = response_model.insider_trades
+                if not insider_trades:
+                    break
+
+                all_trades.extend(insider_trades)
+                if not start_date or len(insider_trades) < limit:
+                    break
+
+                current_end_date = min(trade.filing_date for trade in insider_trades).split("T")[0]
+                if current_end_date <= start_date:
+                    break
+
+            if all_trades:
+                _cache.set_insider_trades(cache_key, [trade.model_dump() for trade in all_trades])
+                return all_trades
+        except Exception as e:
+            logger.warning("Failed to fetch insider trades from API for %s: %s.", ticker, e)
+
     return []
 
 
@@ -324,8 +458,50 @@ def get_company_news(
     end_date: str,
     start_date: str | None = None,
     limit: int = 1000,
+    api_key: str = None,
 ) -> list[CompanyNews]:
-    """Fetch company news using yfinance news API."""
+    """Fetch company news from cache, API, or yfinance."""
+    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
+    if financial_api_key:
+        cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{limit}"
+        if cached_data := _cache.get_company_news(cache_key):
+            return [CompanyNews(**news) for news in cached_data]
+
+        headers = {"X-API-KEY": financial_api_key}
+        all_news = []
+        current_end_date = end_date
+        try:
+            while True:
+                url = f"https://api.financialdatasets.ai/news/?ticker={ticker}&end_date={current_end_date}"
+                if start_date:
+                    url += f"&start_date={start_date}"
+                url += f"&limit={limit}"
+
+                response = _make_api_request(url, headers)
+                if response.status_code != 200:
+                    break
+
+                data = response.json()
+                response_model = CompanyNewsResponse(**data)
+                company_news = response_model.news
+                if not company_news:
+                    break
+
+                all_news.extend(company_news)
+                if not start_date or len(company_news) < limit:
+                    break
+
+                current_end_date = min(news.date for news in company_news).split("T")[0]
+                if current_end_date <= start_date:
+                    break
+
+            if all_news:
+                _cache.set_company_news(cache_key, [news.model_dump() for news in all_news])
+                return all_news
+        except Exception as e:
+            logger.warning("Failed to fetch news from API for %s: %s. Falling back to yfinance.", ticker, e)
+
+    # Fallback to yfinance news API
     formatted_ticker = clean_ticker(ticker)
     try:
         t_obj = yf.Ticker(formatted_ticker)
@@ -335,14 +511,12 @@ def get_company_news(
             
         company_news = []
         for item in news_list[:limit]:
-            # Convert epoch time to YYYY-MM-DD
             pub_time = item.get("providerPublishTime", 0)
             if pub_time:
                 pub_date = datetime.datetime.fromtimestamp(pub_time).strftime("%Y-%m-%d")
             else:
                 pub_date = datetime.datetime.now().strftime("%Y-%m-%d")
                 
-            # Filter by date if start_date/end_date are provided
             if start_date and pub_date < start_date:
                 continue
             if pub_date > end_date:
@@ -355,28 +529,45 @@ def get_company_news(
                 source=item.get("publisher", "Yahoo Finance"),
                 date=pub_date,
                 url=item.get("link", ""),
-                sentiment="neutral" # Default to neutral, Sentiment Agent will analyze it
+                sentiment="neutral"
             ))
         return company_news
     except Exception as e:
         print(f"Error fetching news for {ticker} from yfinance: {e}")
         return []
 
-
 def get_market_cap(
     ticker: str,
     end_date: str,
+    api_key: str = None,
 ) -> float | None:
-    """Fetch current market cap from DB or yfinance."""
+    """Fetch market cap from API, local DB, or yfinance."""
+    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
+    if financial_api_key:
+        try:
+            if end_date == datetime.datetime.now().strftime("%Y-%m-%d"):
+                headers = {"X-API-KEY": financial_api_key}
+                url = f"https://api.financialdatasets.ai/company/facts/?ticker={ticker}"
+                response = _make_api_request(url, headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    response_model = CompanyFactsResponse(**data)
+                    return response_model.company_facts.market_cap
+            
+            financial_metrics = get_financial_metrics(ticker, end_date, api_key=api_key)
+            if financial_metrics and financial_metrics[0].market_cap:
+                return financial_metrics[0].market_cap
+        except Exception as e:
+            logger.warning("Failed to fetch market cap from API for %s: %s. Falling back to local/yfinance.", ticker, e)
+
+    # Fallback to DB or yfinance
     formatted_ticker = clean_ticker(ticker)
     db = SessionLocal()
     try:
         snap = get_fundamentals(db, formatted_ticker)
         if snap and snap.market_cap:
-            # Screener.in market cap is in Crores. Convert to actual rupees
             return float(snap.market_cap) * 1e7
             
-        # Fallback to yfinance info
         t_obj = yf.Ticker(formatted_ticker)
         mcap = t_obj.info.get("marketCap")
         if mcap:
@@ -403,7 +594,7 @@ def prices_to_df(prices: list[Price]) -> pd.DataFrame:
     return df
 
 
-def get_price_data(ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
+def get_price_data(ticker: str, start_date: str, end_date: str, api_key: str = None) -> pd.DataFrame:
     """Fetch prices and return as DataFrame."""
-    prices = get_prices(ticker, start_date, end_date)
+    prices = get_prices(ticker, start_date, end_date, api_key=api_key)
     return prices_to_df(prices)

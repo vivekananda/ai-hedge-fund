@@ -10,16 +10,19 @@ This system employs several agents working together, combined with a robust back
 4. Cathie Wood Agent - The queen of growth investing, believes in the power of innovation and disruption
 5. Charlie Munger Agent - Warren Buffett's partner, only buys wonderful businesses at fair prices
 6. Michael Burry Agent - The Big Short contrarian who hunts for deep value
-7. Peter Lynch Agent - Practical investor who seeks "ten-baggers" in everyday businesses
-8. Phil Fisher Agent - Meticulous growth investor who uses deep "scuttlebutt" research 
-9. Stanley Druckenmiller Agent - Macro legend who hunts for asymmetric opportunities with growth potential
-10. Warren Buffett Agent - The oracle of Omaha, seeks wonderful companies at a fair price
-11. Valuation Agent - Calculates the intrinsic value of a stock and generates trading signals
-12. Sentiment Agent - Analyzes market sentiment and generates trading signals
-13. Fundamentals Agent - Analyzes fundamental data (via Screener.in) and generates trading signals
-14. Technicals Agent - Analyzes technical indicators and generates trading signals
-15. Risk Manager - Calculates risk metrics and sets position limits
-16. Portfolio Manager - Makes final trading decisions and generates orders
+7. Mohnish Pabrai Agent - The Dhandho investor, who looks for doubles at low risk
+8. Nassim Taleb Agent - The Black Swan risk analyst, focuses on tail risk, antifragility, and asymmetric payoffs
+9. Peter Lynch Agent - Practical investor who seeks "ten-baggers" in everyday businesses
+10. Phil Fisher Agent - Meticulous growth investor who uses deep "scuttlebutt" research 
+11. Rakesh Jhunjhunwala Agent - The Big Bull of India, focused on high growth opportunities in Indian markets
+12. Stanley Druckenmiller Agent - Macro legend who hunts for asymmetric opportunities with growth potential
+13. Warren Buffett Agent - The oracle of Omaha, seeks wonderful companies at a fair price
+14. Valuation Agent - Calculates the intrinsic value of a stock and generates trading signals
+15. Sentiment Agent - Analyzes market sentiment and generates trading signals
+16. Fundamentals Agent - Analyzes fundamental data (via Screener.in) and generates trading signals
+17. Technicals Agent - Analyzes technical indicators and generates trading signals
+18. Risk Manager - Calculates risk metrics and sets position limits
+19. Portfolio Manager - Makes final trading decisions and generates orders
 
 ### System Architecture
 
@@ -91,42 +94,68 @@ graph TD
 
 **Note**: the system simulates trading decisions, it does not actually trade.
 
-[![Twitter Follow](https://img.shields.io/twitter/follow/virattt?style=social)](https://twitter.com/virattt)
+<img width="1042" alt="Screenshot 2025-03-22 at 6 19 07 PM" src="https://github.com/user-attachments/assets/cbae3dcf-b571-490d-b0ad-3f0f035ac0d4" />
 
 ## Disclaimer
 
 This project is for **educational and research purposes only**.
 
 - Not intended for real trading or investment
-- No warranties or guarantees provided
-- Past performance does not indicate future results
+- No investment advice or guarantees provided
 - Creator assumes no liability for financial losses
 - Consult a financial advisor for investment decisions
+- Past performance does not indicate future results
 
 By using this software, you agree to use it solely for learning purposes.
 
 ## Table of Contents
-- [Setup](#setup)
-  - [Using Poetry](#using-poetry)
-- [Usage](#usage)
-  - [Running the Application (Backend & Frontend)](#running-the-application-backend--frontend)
-  - [Running the Hedge Fund (CLI)](#running-the-hedge-fund-cli)
-  - [Running the Backtester](#running-the-backtester)
-  - [Data Ingestion Pipelines](#data-ingestion-pipelines)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
+- [How to Install](#how-to-install)
+- [How to Run](#how-to-run)
+  - [⌨️ Command Line Interface](#️-command-line-interface)
+  - [🖥️ Web Application](#️-web-application)
+- [How to Contribute](#how-to-contribute)
 - [Feature Requests](#feature-requests)
 - [License](#license)
 
-## Setup
+## How to Install
 
-### Using Poetry
+Before you can run the AI Hedge Fund, you'll need to install it and set up your API keys. These steps are common to both the full-stack web application and command line interface.
 
-Clone the repository:
+### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/virattt/ai-hedge-fund.git
 cd ai-hedge-fund
 ```
+
+### 2. Set up API keys
+
+Create a `.env` file for your API keys:
+```bash
+# Create .env file for your API keys (in the root directory)
+cp .env.example .env
+```
+
+Open and edit the `.env` file to add your API keys:
+```bash
+# For running LLMs hosted by openai (gpt-4o, gpt-4o-mini, etc.)
+OPENAI_API_KEY=your-openai-api-key
+
+# For getting fundamental data for Indian stocks
+SCREENER_API_KEY=your-screener-api-key
+```
+
+**Important**: You must set at least one LLM API key (e.g. `OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, or `DEEPSEEK_API_KEY`) for the hedge fund to work. 
+
+## How to Run
+
+### ⌨️ Command Line Interface
+
+You can run the AI Hedge Fund directly via terminal. This approach offers more granular control and is useful for automation, scripting, and integration purposes.
+
+<img width="992" alt="Screenshot 2025-01-06 at 5 50 17 PM" src="https://github.com/user-attachments/assets/e8ca04bf-9989-4a7d-a8b4-34e04666663b" />
+
+#### Quick Start
 
 1. Install Poetry (if not already installed):
 ```bash
@@ -145,67 +174,39 @@ npm install
 cd ../..
 ```
 
-4. Set up your environment variables:
-```bash
-# Create .env file for your API keys
-cp .env.example .env
-```
+#### Run the AI Hedge Fund
 
-5. Set your API keys in the `.env` file:
-```bash
-# For running LLMs hosted by openai (gpt-4o, gpt-4o-mini, etc.)
-OPENAI_API_KEY=your-openai-api-key
-
-# For getting fundamental data for Indian stocks
-SCREENER_API_KEY=your-screener-api-key
-```
-
-## Usage
-
-### Running the Application (Backend & Frontend)
-
-To run the full application with the interactive dashboard, start both the FastAPI backend and the React frontend.
-
-1. Start the backend server (FastAPI):
-```bash
-# In one terminal
-poetry run uvicorn app.backend.main:app --reload --port 8000
-```
-
-2. Start the frontend development server (React/Vite):
-```bash
-# In a second terminal
-cd app/frontend
-npm run dev
-```
-
-Navigate to `http://localhost:5173` (or the port provided by Vite) in your browser to access the dashboard.
-
-### Running the Hedge Fund (CLI)
-
-You can still run the hedge fund analysis directly from the command line. Ensure you use Yahoo Finance compatible Indian tickers (e.g., `RELIANCE.NS`).
+You can run the hedge fund analysis directly from the command line. Ensure you use Yahoo Finance compatible Indian tickers (e.g., `RELIANCE.NS`).
 
 ```bash
 poetry run python src/main.py --ticker RELIANCE.NS,TCS.NS,HDFCBANK.NS
 ```
 
-You can also specify a `--show-reasoning` flag to print the reasoning of each agent to the console.
-
+You can also specify a `--ollama` flag to run the AI hedge fund using local LLMs.
 ```bash
-poetry run python src/main.py --ticker RELIANCE.NS,TCS.NS --show-reasoning
+poetry run python src/main.py --ticker RELIANCE.NS,TCS.NS --ollama
 ```
 
-### Running the Backtester
+You can optionally specify the start and end dates to make decisions over a specific time period.
+```bash
+poetry run python src/main.py --ticker RELIANCE.NS,TCS.NS --start-date 2024-01-01 --end-date 2024-03-01
+```
+
+#### Run the Backtester
 
 ```bash
 poetry run python src/backtester.py --ticker RELIANCE.NS,TCS.NS
 ```
 
-You can optionally specify the start and end dates to backtest over a specific time period.
+Note: The `--ollama`, `--start-date`, and `--end-date` flags work for the backtester, as well!
 
-```bash
-poetry run python src/backtester.py --ticker RELIANCE.NS --start-date 2024-01-01 --end-date 2024-03-01
-```
+### 🖥️ Web Application
+
+The new way to run the AI Hedge Fund is through our web application that provides a user-friendly interface. This is recommended for users who prefer visual interfaces over command line tools.
+
+Please see detailed instructions on how to install and run the web application [here](https://github.com/virattt/ai-hedge-fund/tree/main/app).
+
+<img width="1721" alt="Screenshot 2025-06-28 at 6 41 03 PM" src="https://github.com/user-attachments/assets/b95ab696-c9f4-416c-9ad1-51feb1f5374b" />
 
 ### Data Ingestion Pipelines
 
@@ -221,28 +222,7 @@ Ingest fundamental data (requires Screener API):
 poetry run python fundamentals_ingest.py --wishlist "Nifty 50"
 ```
 
-## Project Structure 
-```
-ai-hedge-fund/
-├── app/
-│   ├── backend/              # FastAPI backend server
-│   ├── frontend/             # React/Vite interactive dashboard
-├── src/
-│   ├── agents/               # Agent definitions and workflow
-│   ├── db/                   # Database connection and schema
-│   ├── tools/                # Agent tools (API integrations)
-│   ├── utils/                # Utility functions
-│   ├── backtester.py         # Backtesting tools
-│   ├── main.py               # Main entry point (CLI hedge fund)
-├── pipelines/                # Recurring pipelines (e.g., weekly runs)
-├── ingest_prices.py          # Script to ingest price data
-├── fundamentals_ingest.py    # Script to ingest fundamental data
-├── hedge_fund.db             # SQLite database (generated)
-├── pyproject.toml
-├── ...
-```
-
-## Contributing
+## How to Contribute
 
 1. Fork the repository
 2. Create a feature branch

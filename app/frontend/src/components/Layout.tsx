@@ -1,127 +1,193 @@
+import { BottomPanel } from '@/components/panels/bottom/bottom-panel';
+import { LeftSidebar } from '@/components/panels/left/left-sidebar';
+import { RightSidebar } from '@/components/panels/right/right-sidebar';
+import { TabBar } from '@/components/tabs/tab-bar';
+import { TabContent } from '@/components/tabs/tab-content';
 import { SidebarProvider } from '@/components/ui/sidebar';
-import { FlowProvider } from '@/contexts/flow-context';
+import { FlowProvider, useFlowContext } from '@/contexts/flow-context';
+import { LayoutProvider, useLayoutContext } from '@/contexts/layout-context';
+import { TabsProvider, useTabsContext } from '@/contexts/tabs-context';
+import { useLayoutKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { cn } from '@/lib/utils';
+import { SidebarStorageService } from '@/services/sidebar-storage';
+import { TabService } from '@/services/tab-service';
 import { ReactFlowProvider } from '@xyflow/react';
-import { PanelLeft } from 'lucide-react';
-import { ReactNode, useState } from 'react';
-import { LeftSidebar } from './sidebar/left-sidebar';
-import { Button } from './ui/button';
+import { ReactNode, useEffect, useState } from 'react';
+import { TopBar } from './layout/top-bar';
 
-type LayoutProps = {
-  leftSidebar?: ReactNode;
-  rightSidebar?: ReactNode;
-  children: ReactNode;
-  activeTab: 'simulation' | 'screener' | 'weekly-picks';
-  onTabChange: (tab: 'simulation' | 'screener' | 'weekly-picks') => void;
-};
+// Create a LayoutContent component to access the FlowContext, TabsContext, and LayoutContext
+function LayoutContent({ children }: { children: ReactNode }) {
+  const { reactFlowInstance } = useFlowContext();
+  const { openTab } = useTabsContext();
+  const { isBottomCollapsed, expandBottomPanel, collapseBottomPanel, toggleBottomPanel } = useLayoutContext();
+  
+  // Initialize sidebar states from storage service
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(() => 
+    SidebarStorageService.loadLeftSidebarState(false)
+  );
+  
+  const [isRightCollapsed, setIsRightCollapsed] = useState(() => 
+    SidebarStorageService.loadRightSidebarState(false)
+  );
 
-export function Layout({ leftSidebar, rightSidebar, children, activeTab, onTabChange }: LayoutProps) {
-  const [isCollapsed, setIsCollapsed] = useState(true);
+  // Track actual sidebar widths for dynamic positioning
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(280);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(280);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(300);
+
+  const handleSettingsClick = () => {
+    const tabData = TabService.createSettingsTab();
+    openTab(tabData);
+  };
+
+  const handleScreenerClick = () => {
+    const tabData = TabService.createScreenerTab();
+    openTab(tabData);
+  };
+
+  const handleWeeklyPicksClick = () => {
+    const tabData = TabService.createWeeklyPicksTab();
+    openTab(tabData);
+  };
+
+  // Add keyboard shortcuts for toggling sidebars and fit view
+  useLayoutKeyboardShortcuts(
+    () => setIsRightCollapsed(!isRightCollapsed), // Cmd+I for right sidebar
+    () => setIsLeftCollapsed(!isLeftCollapsed),   // Cmd+B for left sidebar
+    () => reactFlowInstance?.fitView({ padding: 0.1, duration: 500 }), // Cmd+O for fit view
+    // Note: undo/redo will be handled directly in the Flow component for now
+    undefined, // undo
+    undefined, // redo
+    toggleBottomPanel, // Cmd+J for bottom panel
+    handleSettingsClick, // Shift+Cmd+J for settings
+  );
+
+  // Save sidebar states whenever they change
+  useEffect(() => {
+    SidebarStorageService.saveLeftSidebarState(isLeftCollapsed);
+  }, [isLeftCollapsed]);
+
+  useEffect(() => {
+    SidebarStorageService.saveRightSidebarState(isRightCollapsed);
+  }, [isRightCollapsed]);
+
+  // Calculate tab bar and bottom panel positioning based on actual sidebar widths
+  const getSidebarBasedStyle = () => {
+    let left = 0;
+    let right = 0;
+    
+    if (!isLeftCollapsed) {
+      left = leftSidebarWidth;
+    }
+    
+    if (!isRightCollapsed) {
+      right = rightSidebarWidth;
+    }
+    
+    return {
+      left: `${left}px`,
+      right: `${right}px`,
+    };
+  };
 
   return (
-    <SidebarProvider defaultOpen={!isCollapsed}>
-      <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
-        {/* Top Header Navigation */}
-        <header className="flex items-center justify-between px-6 py-3 bg-ramp-grey-900 border-b border-ramp-grey-800 z-40 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center font-bold text-white text-base shadow-lg shadow-indigo-500/10">
-              Æ
-            </div>
-            <div className="flex flex-col">
-              <span className="text-white font-bold tracking-wider text-xs leading-none">AI HEDGE FUND</span>
-              <span className="text-[9px] text-cyan-400 font-medium tracking-widest mt-0.5">PORTFOLIO CO-PILOT</span>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-1.5 bg-ramp-grey-1000 p-1 rounded-lg border border-ramp-grey-800">
-            <button
-              onClick={() => onTabChange('simulation')}
-              className={cn(
-                "px-5 py-2 text-xs font-semibold rounded-md transition-all duration-200",
-                activeTab === 'simulation' 
-                  ? "bg-ramp-grey-800 text-white shadow-md border border-ramp-grey-700" 
-                  : "text-gray-400 hover:text-white"
-              )}
-            >
-              Simulation Workspace
-            </button>
-            <button
-              onClick={() => onTabChange('screener')}
-              className={cn(
-                "px-5 py-2 text-xs font-semibold rounded-md transition-all duration-200",
-                activeTab === 'screener' 
-                  ? "bg-ramp-grey-800 text-white shadow-md border border-ramp-grey-700" 
-                  : "text-gray-400 hover:text-white"
-              )}
-            >
-              Market Screener
-            </button>
-            <button
-              onClick={() => onTabChange('weekly-picks')}
-              className={cn(
-                "px-5 py-2 text-xs font-semibold rounded-md transition-all duration-200",
-                activeTab === 'weekly-picks' 
-                  ? "bg-ramp-grey-800 text-white shadow-md border border-ramp-grey-700" 
-                  : "text-gray-400 hover:text-white"
-              )}
-            >
-              Weekly Picks
-            </button>
-          </div>
-          
-          <div className="flex items-center gap-2 text-xs text-gray-400">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>NIFTY 500 LIVE</span>
-          </div>
-        </header>
+    <div className="flex h-screen w-screen overflow-hidden relative bg-background">
+      {/* VSCode-style Top Bar */}
+      <TopBar
+        isLeftCollapsed={isLeftCollapsed}
+        isRightCollapsed={isRightCollapsed}
+        isBottomCollapsed={isBottomCollapsed}
+        onToggleLeft={() => setIsLeftCollapsed(!isLeftCollapsed)}
+        onToggleRight={() => setIsRightCollapsed(!isRightCollapsed)}
+        onToggleBottom={toggleBottomPanel}
+        onSettingsClick={handleSettingsClick}
+      />
 
-        {/* Workspace Body */}
-        <div className="flex-1 flex overflow-hidden relative">
-          <ReactFlowProvider>
-            <FlowProvider>
-              {/* Main content area takes full width */}
-              <main className="flex-1 h-full overflow-hidden w-full relative">
-                {children}
-              </main>
-
-              {/* Floating left sidebar - only render if simulation tab */}
-              {activeTab === 'simulation' && (
-                <div className={cn(
-                  "absolute top-0 left-0 z-30 h-full transition-transform",
-                  isCollapsed && "transform -translate-x-full opacity-0"
-                )}>
-                  <LeftSidebar
-                    isCollapsed={isCollapsed}
-                    onCollapse={() => setIsCollapsed(true)}
-                    onExpand={() => setIsCollapsed(false)}
-                    onToggleCollapse={() => setIsCollapsed(!isCollapsed)}
-                  >
-                    {leftSidebar}
-                  </LeftSidebar>
-                </div>
-              )}
-
-              {/* Sidebar toggle button - visible when sidebar is collapsed, only in simulation tab */}
-              {isCollapsed && activeTab === 'simulation' && (
-                <Button 
-                  className="absolute top-4 left-4 z-30 bg-ramp-grey-800 text-white p-2 rounded-md hover:bg-ramp-grey-700 border border-ramp-grey-700 shadow-lg"
-                  onClick={() => setIsCollapsed(false)}
-                  aria-label="Show sidebar"
-                >
-                  Components <PanelLeft size={16} />
-                </Button>
-              )}
-
-              {/* Right sidebar */}
-              {rightSidebar && activeTab === 'simulation' && (
-                <div className="h-full w-64 bg-gray-900 border-l border-gray-800 ml-auto flex-shrink-0">
-                  {rightSidebar}
-                </div>
-              )}
-            </FlowProvider>
-          </ReactFlowProvider>
-        </div>
+      {/* Tab Bar - positioned absolutely like bottom panel */}
+      <div 
+        className="absolute top-0 z-10 transition-all duration-200"
+        style={getSidebarBasedStyle()}
+      >
+        <TabBar />
       </div>
+
+      {/* Main content area */}
+      <main 
+        className="absolute inset-0 overflow-hidden" 
+        style={{
+          left: !isLeftCollapsed ? `${leftSidebarWidth}px` : '0px',
+          right: !isRightCollapsed ? `${rightSidebarWidth}px` : '0px',
+          top: '40px', // Tab bar height
+          bottom: !isBottomCollapsed ? `${bottomPanelHeight}px` : '0px',
+        }}
+      >
+        <TabContent className="h-full w-full" />
+      </main>
+
+      {/* Floating left sidebar */}
+      <div className={cn(
+        "absolute top-0 left-0 z-30 h-full transition-transform",
+        isLeftCollapsed && "transform -translate-x-full opacity-0"
+      )}>
+        <LeftSidebar
+          isCollapsed={isLeftCollapsed}
+          onCollapse={() => setIsLeftCollapsed(true)}
+          onExpand={() => setIsLeftCollapsed(false)}
+          onWidthChange={setLeftSidebarWidth}
+          onOpenScreener={handleScreenerClick}
+          onOpenWeeklyPicks={handleWeeklyPicksClick}
+        />
+      </div>
+
+      {/* Floating right sidebar */}
+      <div className={cn(
+        "absolute top-0 right-0 z-30 h-full transition-transform",
+        isRightCollapsed && "transform translate-x-full opacity-0"
+      )}>
+        <RightSidebar
+          isCollapsed={isRightCollapsed}
+          onCollapse={() => setIsRightCollapsed(true)}
+          onExpand={() => setIsRightCollapsed(false)}
+          onWidthChange={setRightSidebarWidth}
+        />
+      </div>
+
+      {/* Bottom panel */}
+      <div 
+        className={cn(
+          "absolute bottom-0 z-20 transition-transform",
+          isBottomCollapsed && "transform translate-y-full opacity-0"
+        )}
+        style={getSidebarBasedStyle()}
+      >
+        <BottomPanel
+          isCollapsed={isBottomCollapsed}
+          onCollapse={collapseBottomPanel}
+          onExpand={expandBottomPanel}
+          onToggleCollapse={toggleBottomPanel}
+          onHeightChange={setBottomPanelHeight}
+        />
+      </div>
+    </div>
+  );
+}
+
+interface LayoutProps {
+  children?: ReactNode;
+}
+
+export function Layout({ children }: LayoutProps) {
+  return (
+    <SidebarProvider defaultOpen={true}>
+      <ReactFlowProvider>
+        <FlowProvider>
+          <TabsProvider>
+            <LayoutProvider>
+              <LayoutContent>{children}</LayoutContent>
+            </LayoutProvider>
+          </TabsProvider>
+        </FlowProvider>
+      </ReactFlowProvider>
     </SidebarProvider>
   );
 }
