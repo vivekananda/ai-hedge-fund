@@ -4,11 +4,25 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { ModelSelector } from './ui/llm-selector';
-import { apiModels } from '@/data/models';
+import { getModels, LanguageModel } from '@/data/models';
 import { api, WeeklyPick, WeeklyRun } from '@/services/api';
 import { useWatchlist } from '@/contexts/watchlist-context';
 
 export function WeeklyPicksDashboard() {
+  const [models, setModels] = useState<LanguageModel[]>([]);
+
+  useEffect(() => {
+    const fetchModelsList = async () => {
+      try {
+        const list = await getModels();
+        setModels(list);
+      } catch (err) {
+        console.error('Error fetching models list:', err);
+      }
+    };
+    fetchModelsList();
+  }, []);
+
   const {
     watchlists,
     activeWatchlistName,
@@ -318,7 +332,7 @@ export function WeeklyPicksDashboard() {
               <div className="flex flex-col gap-2">
                 <span className="text-xs text-gray-400 font-semibold tracking-wider uppercase">Select Model</span>
                 <ModelSelector
-                  models={apiModels}
+                  models={models}
                   value={selectedModel?.model_name || ""}
                   onChange={setSelectedModel}
                   placeholder="Select LLM model..."
@@ -796,7 +810,7 @@ export function WeeklyPicksDashboard() {
                     <Settings size={10} /> Choose Model
                   </span>
                   <ModelSelector
-                    models={apiModels}
+                    models={models}
                     value={selectedModel?.model_name || ''}
                     onChange={setSelectedModel}
                     placeholder="Select simulation model..."

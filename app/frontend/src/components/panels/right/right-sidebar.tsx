@@ -99,6 +99,7 @@ export function RightSidebar({
       
       // Load details into node context to restore Flow state
       nodeContext.loadPastRun(
+        null,
         detail.logs || [],
         detail.decisions,
         detail.analyst_signals

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { api, Watchlist } from '@/services/api';
-import { ModelItem, defaultModel } from '@/data/models';
+import { LanguageModel, getDefaultModel } from '@/data/models';
 
 type TabType = 'simulation' | 'screener' | 'weekly-picks';
 
@@ -10,12 +10,12 @@ interface WatchlistContextType {
   activeWatchlist: Watchlist | null;
   activeTab: TabType;
   simulationTickers: string;
-  selectedModel: ModelItem | null;
+  selectedModel: LanguageModel | null;
   pendingAutoRun: boolean;
   
   setActiveTab: (tab: TabType) => void;
   setSimulationTickers: (tickers: string) => void;
-  setSelectedModel: (model: ModelItem | null) => void;
+  setSelectedModel: (model: LanguageModel | null) => void;
   setPendingAutoRun: (pending: boolean) => void;
   setActiveWatchlistName: (name: string | null) => void;
   
@@ -25,8 +25,8 @@ interface WatchlistContextType {
   addTickerToActive: (ticker: string) => Promise<void>;
   removeTickerFromActive: (ticker: string) => Promise<void>;
   isInActiveWatchlist: (ticker: string) => boolean;
-  runSimulationOnActive: (model: ModelItem | null) => void;
-  runSimulationOnTicker: (ticker: string, model: ModelItem | null) => void;
+  runSimulationOnActive: (model: LanguageModel | null) => void;
+  runSimulationOnTicker: (ticker: string, model: LanguageModel | null) => void;
 }
 
 const WatchlistContext = createContext<WatchlistContextType | undefined>(undefined);
@@ -39,7 +39,15 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   
   const [activeTab, setActiveTab] = useState<TabType>('simulation');
   const [simulationTickers, setSimulationTickers] = useState<string>('');
-  const [selectedModel, setSelectedModel] = useState<ModelItem | null>(defaultModel);
+  const [selectedModel, setSelectedModel] = useState<LanguageModel | null>(null);
+
+  useEffect(() => {
+    const loadDefault = async () => {
+      const defModel = await getDefaultModel();
+      setSelectedModel(defModel);
+    };
+    loadDefault();
+  }, []);
   const [pendingAutoRun, setPendingAutoRun] = useState<boolean>(false);
 
   // Fetch watchlists from backend
@@ -158,7 +166,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   };
 
   // Fire simulation run
-  const runSimulationOnActive = (model: ModelItem | null) => {
+  const runSimulationOnActive = (model: LanguageModel | null) => {
     if (!activeWatchlist || activeWatchlist.tickers.length === 0) return;
     
     // Set tickers in text field (e.g. "RELIANCE.NS, TCS.NS")
@@ -173,7 +181,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   };
 
   // Fire simulation run on a single ticker
-  const runSimulationOnTicker = useCallback((ticker: string, model: ModelItem | null) => {
+  const runSimulationOnTicker = useCallback((ticker: string, model: LanguageModel | null) => {
     setSimulationTickers(ticker);
     if (model) {
       setSelectedModel(model);

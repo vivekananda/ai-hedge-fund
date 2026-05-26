@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, ChevronRight, X, Loader2, TrendingUp, TrendingDown, Activity, Plus, ListPlus, Trash2, Play, Settings, ExternalLink } from 'lucide-react';
 import { useWatchlist } from '@/contexts/watchlist-context';
 import { ModelSelector } from './ui/llm-selector';
-import { apiModels } from '@/data/models';
+import { getModels, LanguageModel } from '@/data/models';
 
 interface StockFundamental {
   as_of_date: string | null;
@@ -41,6 +41,19 @@ export function Screener() {
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [models, setModels] = useState<LanguageModel[]>([]);
+
+  useEffect(() => {
+    const fetchModelsList = async () => {
+      try {
+        const list = await getModels();
+        setModels(list);
+      } catch (err) {
+        console.error('Error fetching models list:', err);
+      }
+    };
+    fetchModelsList();
+  }, []);
   
   // Search and filter states
   const [search, setSearch] = useState('');
@@ -756,7 +769,7 @@ export function Screener() {
                       <Settings size={10} /> Choose Model
                     </span>
                     <ModelSelector
-                      models={apiModels}
+                      models={models}
                       value={selectedModel?.model_name || ''}
                       onChange={setSelectedModel}
                       placeholder="Select simulation model..."
