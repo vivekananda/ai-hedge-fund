@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from src.db.connection import SessionLocal
 from src.db.models import DailyPrice, Stock
-from src.db.queries import init_db, save_daily_prices, get_nifty500_stocks
+from src.db.queries import init_db, save_daily_prices, get_all_stocks
 from src.data.universe import sync_nifty500_universe
 from src.data.yfinance_client import fetch_yfinance_prices
 
@@ -68,7 +68,7 @@ def ingest_all_prices(force_full: bool = False, max_workers: int = 15):
         
     db = SessionLocal()
     try:
-        stocks = get_nifty500_stocks(db)
+        stocks = get_all_stocks(db)
         if not stocks:
             print("No stocks found in the database. Please check your internet connection or database setup.")
             return

@@ -185,11 +185,13 @@ export function WeeklyPicksDashboard() {
   const [selectedAnalysis, setSelectedAnalysis] = useState<WeeklyPick | null>(null);
   const [loadingPicks, setLoadingPicks] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<'png' | 'pdf' | null>(null);
+  const [exportingSingleFormat, setExportingSingleFormat] = useState<'png' | 'pdf' | null>(null);
   const [activeRuns, setActiveRuns] = useState<WeeklyRun[]>([]);
   
   // Controls
   const [testMode, setTestMode] = useState(true);
   const [isTriggering, setIsTriggering] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -300,6 +302,19 @@ export function WeeklyPicksDashboard() {
       setError(err.message || 'Failed to start weekly picks pipeline');
     } finally {
       setIsTriggering(false);
+    }
+  };
+
+  const handleCancelPipeline = async (runId: number) => {
+    try {
+      setIsCancelling(true);
+      setError(null);
+      await api.cancelWeeklyPipeline(runId);
+      await fetchRuns();
+    } catch (err: any) {
+      setError(err.message || 'Failed to cancel weekly picks pipeline');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -625,7 +640,7 @@ export function WeeklyPicksDashboard() {
     return lines;
   };
 
-  const buildPdf = (lines: string[]) => {
+  const buildPdf = (lines: string[], titleText = 'Top 50 Picks') => {
     const pageWidth = 612;
     const pageHeight = 792;
     const margin = 48;
@@ -650,7 +665,7 @@ export function WeeklyPicksDashboard() {
         'BT',
         '/F2 20 Tf',
         `${margin} ${pageHeight - margin} Td`,
-        index === 0 ? `(Top 50 Picks) Tj` : `(Top 50 Picks continued) Tj`,
+        index === 0 ? `(${escapePdfText(titleText)}) Tj` : `(${escapePdfText(titleText)} continued) Tj`,
         '/F1 10 Tf',
         `0 -${lineHeight * 1.6} Td`,
         ...pageLines.map((line) => `(${escapePdfText(line)}) Tj 0 -${lineHeight} Td`),
@@ -713,6 +728,290 @@ export function WeeklyPicksDashboard() {
       setError(err.message || 'Failed to export PDF');
     } finally {
       setExportingFormat(null);
+    }
+  };
+
+  const handleExportSinglePdf = (pick: WeeklyPick) => {
+    if (exportingSingleFormat) return;
+
+    try {
+      setExportingSingleFormat('pdf');
+      const { sections } = parseThesis(pick.thesis);
+      
+      const symbolClean = pick.symbol.replace('.NS', '');
+      const title = `${symbolClean} Analysis Report`;
+
+      const lines = [
+        `Stock: ${symbolClean} - ${pick.name}`,
+        `Signal: ${pick.signal.toUpperCase()}`,
+        `Conviction Score: ${pick.score}%`,
+        `Risk Rating: ${pick.risk_score}/10`,
+        `Analysis Date: ${pick.analysis_date || '—'} at ${formatPrice(pick.analysis_price)}`,
+        `Current Date: ${pick.current_date || '—'} at ${formatPrice(pick.current_price)}`,
+        `Price Move: ${formatPercent(pick.price_change_pct)}`,
+        `Exported: ${new Date().toLocaleString('en-IN')}`,
+        '',
+        '--- THESIS BREAKDOWN ---',
+        '',
+        ...sections.flatMap((section) => {
+          return [
+            `${section.title.toUpperCase()}:`,
+            ...section.bullets.flatMap((bullet) => wrapPdfText(`- ${bullet}`, 95)),
+            '',
+          ];
+        })
+      ];
+
+      const filename = `${symbolClean}_Analysis_${pick.analysis_date || 'latest'}.pdf`;
+      downloadBlob(buildPdf(lines, title), filename);
+    } catch (err: any) {
+      setError(err.message || 'Failed to export PDF');
+    } finally {
+      setExportingSingleFormat(null);
+    }
+  };
+
+  const handleExportSinglePng = async (pick: WeeklyPick) => {
+    if (exportingSingleFormat) return;
+
+    try {
+      setExportingSingleFormat('png');
+      const symbolClean = pick.symbol.replace('.NS', '');
+      const { sections } = parseThesis(pick.thesis);
+
+      // Create a temporary canvas context for text measurement
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d');
+      if (!tempCtx) throw new Error('Canvas not supported');
+
+      // Font configurations matching final canvas
+      tempCtx.font = '14px Inter, Arial, sans-serif';
+      
+      const width = 1200;
+      const margin = 50;
+      const colW = width - margin * 2; // Full width single column (1100px)
+
+      // Calculate Thesis Breakdown height (Full width single column)
+      let leftHeight = 0;
+      sections.forEach((section) => {
+        if (section.bullets.length === 0) return;
+        leftHeight += 35; // Section heading and padding
+        section.bullets.forEach((bullet) => {
+          const wrapped = wrapCanvasText(tempCtx, bullet, colW - 24);
+          leftHeight += wrapped.length * 22 + 8; // Each line height + padding
+        });
+        leftHeight += 20; // Margin between sections
+      });
+
+      // Final canvas specifications
+      const contentHeight = Math.max(leftHeight, 300);
+      const headerHeight = 170;
+      const metricsHeight = 120;
+      const footerHeight = 80;
+      const height = headerHeight + metricsHeight + contentHeight + footerHeight;
+
+      const scale = window.devicePixelRatio || 2; // High-DPI support
+      const canvas = document.createElement('canvas');
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas is unavailable');
+
+      ctx.scale(scale, scale);
+
+      // Background paint
+      ctx.fillStyle = '#0b0f17';
+      ctx.fillRect(0, 0, width, height);
+
+      // Top gradient bar
+      const topGrad = ctx.createLinearGradient(0, 0, width, 0);
+      topGrad.addColorStop(0, '#06b6d4');
+      topGrad.addColorStop(1, '#4f46e5');
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(0, 0, width, 10);
+
+      // --- 1. HEADER SECTION ---
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 40px Inter, Arial, sans-serif';
+      ctx.fillText(symbolClean, margin, 75);
+
+      const symbolWidth = ctx.measureText(symbolClean).width;
+
+      // Signal Badge
+      const isBuy = pick.signal.toLowerCase() === 'buy';
+      const badgeX = margin + symbolWidth + 18;
+      const badgeY = 42;
+      const badgeW = 75;
+      const badgeH = 34;
+      ctx.fillStyle = isBuy ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+      ctx.strokeStyle = isBuy ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = isBuy ? '#10b981' : '#f59e0b';
+      ctx.font = '700 14px Inter, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(pick.signal.toUpperCase(), badgeX + badgeW / 2, badgeY + 22);
+      ctx.textAlign = 'left';
+
+      // Company Name & Subtext
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '500 18px Inter, Arial, sans-serif';
+      ctx.fillText(pick.name, margin, 110);
+
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '400 13px Inter, Arial, sans-serif';
+      ctx.fillText(`Analysis Run Date: ${pick.analysis_date || '—'}  |  Exported: ${new Date().toLocaleString('en-IN')}`, margin, 134);
+
+      // Right Header Badges (Conviction & Risk)
+      // Conviction Badge
+      const convictionText = `${pick.score}% Conviction`;
+      ctx.font = '600 13px Inter, Arial, sans-serif';
+      const convW = ctx.measureText(convictionText).width + 24;
+      const convX = width - margin - convW;
+      const rightBadgeY = 48;
+      
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.12)';
+      ctx.strokeStyle = 'rgba(6, 182, 212, 0.35)';
+      ctx.beginPath();
+      ctx.roundRect(convX, rightBadgeY, convW, 28, 14);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#22d3ee';
+      ctx.fillText(convictionText, convX + 12, rightBadgeY + 18);
+
+      // Risk Badge
+      const riskText = `Risk: ${pick.risk_score}/10`;
+      const riskW = ctx.measureText(riskText).width + 24;
+      const riskX = convX - 15 - riskW;
+      
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.35)';
+      ctx.beginPath();
+      ctx.roundRect(riskX, rightBadgeY, riskW, 28, 14);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#f87171';
+      ctx.fillText(riskText, riskX + 12, rightBadgeY + 18);
+
+      // --- 2. METRICS CARDS SECTION ---
+      const cardStartY = 160;
+      const gap = 20;
+      const cardW = (width - margin * 2 - gap * 3) / 4;
+      const cardH = 86;
+
+      const metrics = [
+        { label: 'ANALYSIS PRICE', val: formatPrice(pick.analysis_price), sub: pick.analysis_date || '—' },
+        { label: 'CAPTURED CURRENT', val: formatPrice(pick.current_price_at_analysis), sub: 'At analysis time' },
+        { label: 'CURRENT PRICE', val: formatPrice(pick.current_price), sub: pick.current_date || 'Latest cached' },
+        { 
+          label: 'MOVE SINCE ANALYSIS', 
+          val: formatPercent(pick.price_change_pct), 
+          sub: 'Analysis vs current', 
+          color: (pick.price_change_pct || 0) >= 0 ? '#10b981' : '#ef4444' 
+        }
+      ];
+
+      metrics.forEach((m, idx) => {
+        const x = margin + idx * (cardW + gap);
+        ctx.fillStyle = '#101722';
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x, cardStartY, cardW, cardH, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // Label
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '700 10px Inter, Arial, sans-serif';
+        ctx.fillText(m.label, x + 16, cardStartY + 24);
+
+        // Value
+        ctx.fillStyle = m.color || '#ffffff';
+        ctx.font = '700 20px Inter, Arial, sans-serif';
+        ctx.fillText(m.val, x + 16, cardStartY + 52);
+
+        // Subtext
+        ctx.fillStyle = '#4b5563';
+        ctx.font = '500 11px Inter, Arial, sans-serif';
+        ctx.fillText(m.sub, x + 16, cardStartY + 72);
+      });
+
+      // --- 3. SINGLE COLUMN CONTENT SECTION ---
+      const contentStartY = cardStartY + cardH + 35;
+
+      // --- Thesis Breakdown ---
+      let currentY = contentStartY;
+      ctx.fillStyle = '#22d3ee';
+      ctx.font = '700 15px Inter, Arial, sans-serif';
+      ctx.fillText('THESIS BREAKDOWN', margin, currentY);
+      currentY += 24;
+
+      sections.forEach((section) => {
+        if (section.bullets.length === 0) return;
+        
+        ctx.fillStyle = /^decision summary$/i.test(section.title) ? '#67e8f9' : '#e2e8f0';
+        ctx.font = '700 12px Inter, Arial, sans-serif';
+        ctx.fillText(section.title.toUpperCase(), margin, currentY);
+        currentY += 16;
+
+        section.bullets.forEach((bullet) => {
+          ctx.font = '400 13px Inter, Arial, sans-serif';
+          const wrapped = wrapCanvasText(ctx, bullet, colW - 24);
+          
+          wrapped.forEach((line, lIdx) => {
+            if (lIdx === 0) {
+              // Draw bullet indicator
+              ctx.fillStyle = /^decision summary$/i.test(section.title) ? '#22d3ee' : '#6b7280';
+              ctx.beginPath();
+              ctx.arc(margin + 6, currentY - 4, 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.fillStyle = '#cbd5e1';
+            ctx.fillText(line, margin + 20, currentY);
+            currentY += 22;
+          });
+          currentY += 6; // bullet gap
+        });
+        currentY += 14; // section gap
+      });
+
+      // --- 4. FOOTER ---
+      const footerY = height - 40;
+      // Divider line
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(margin, footerY - 15);
+      ctx.lineTo(width - margin, footerY - 15);
+      ctx.stroke();
+
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '400 12px Inter, Arial, sans-serif';
+      ctx.fillText('Generated by AI Hedge Fund Weekly Picks Dashboard', margin, footerY + 8);
+      
+      const watermark = 'Confidential Report • Proprietary Systems';
+      ctx.font = '600 11px Inter, Arial, sans-serif';
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.4)';
+      const waterW = ctx.measureText(watermark).width;
+      ctx.fillText(watermark, width - margin - waterW, footerY + 8);
+
+      // Export as file
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Unable to create PNG export');
+      const filename = `${symbolClean}_Analysis_${pick.analysis_date || 'latest'}.png`;
+      downloadBlob(blob, filename);
+    } catch (err: any) {
+      setError(err.message || 'Failed to export PNG');
+    } finally {
+      setExportingSingleFormat(null);
     }
   };
 
@@ -822,15 +1121,27 @@ export function WeeklyPicksDashboard() {
             )}
 
             {runningJob && (
-              <div className="flex items-center gap-3 p-3 bg-indigo-950/30 border border-indigo-900/30 rounded-lg text-indigo-300 text-xs">
-                <Loader2 className="h-4 w-4 animate-spin text-cyan-400 flex-shrink-0" />
-                <div className="flex-1">
-                  <span className="font-semibold">Pipeline Execution Status: </span>
-                  <span className="capitalize font-mono">{runningJob.status}...</span>
-                  <p className="text-[10px] text-gray-400 mt-0.5">
-                    Triggered at {new Date(runningJob.created_at).toLocaleTimeString()} ({runningJob.test_mode ? 'Speed Test' : 'Full Ingestion'}) on universe <span className="font-semibold text-cyan-400">{runningJob.watchlist_name || 'Nifty 500'}</span>. This might take 1–2 minutes.
-                  </p>
+              <div className="flex items-center justify-between gap-3 p-3 bg-indigo-950/30 border border-indigo-900/30 rounded-lg text-indigo-300 text-xs">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-cyan-400 flex-shrink-0" />
+                  <div className="flex-1">
+                    <span className="font-semibold">Pipeline Execution Status: </span>
+                    <span className="capitalize font-mono">{runningJob.status}...</span>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      Triggered at {new Date(runningJob.created_at).toLocaleTimeString()} ({runningJob.test_mode ? 'Speed Test' : 'Full Ingestion'}) on universe <span className="font-semibold text-cyan-400">{runningJob.watchlist_name || 'Nifty 500'}</span>. This might take 1–2 minutes.
+                    </p>
+                  </div>
                 </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="bg-red-950 hover:bg-red-900 text-red-400 border border-red-900/50 text-[10px] h-8 shrink-0 flex items-center gap-1.5 active:scale-[0.98] transition-all"
+                  onClick={() => handleCancelPipeline(runningJob.id)}
+                  disabled={isCancelling}
+                >
+                  {isCancelling ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                  {isCancelling ? 'Stopping...' : 'Stop Pipeline'}
+                </Button>
               </div>
             )}
 
@@ -916,6 +1227,7 @@ export function WeeklyPicksDashboard() {
                   {activeRuns.slice(0, 4).map((run) => {
                     const statusColor = run.status === 'COMPLETED' ? 'text-emerald-400 bg-emerald-500/10' :
                                       run.status === 'FAILED' ? 'text-rose-400 bg-rose-500/10' :
+                                      run.status === 'CANCELLED' ? 'text-gray-400 bg-gray-500/10' :
                                       'text-cyan-400 bg-cyan-500/10 animate-pulse';
                     const canOpenRun = run.status === 'COMPLETED';
                     const rowClassName = `w-full text-left bg-ramp-grey-950 border border-ramp-grey-850 rounded-lg p-2 text-[10px] space-y-1 ${
@@ -942,7 +1254,7 @@ export function WeeklyPicksDashboard() {
                           <span>List: {run.watchlist_name || 'Nifty 500'}</span>
                           <span>{run.test_mode ? 'Speed' : 'Full'}</span>
                         </div>
-                        {run.status === 'FAILED' && run.error_message && (
+                        {(run.status === 'FAILED' || run.status === 'CANCELLED') && run.error_message && (
                           <p className="text-rose-400 font-mono text-[8px] bg-red-950/20 p-1 rounded border border-red-900/20 max-w-full break-words mt-1 leading-normal">
                             Error: {run.error_message}
                           </p>
@@ -1371,16 +1683,42 @@ export function WeeklyPicksDashboard() {
         <DialogContent className="max-w-5xl max-h-[86vh] overflow-hidden bg-ramp-grey-900 border-ramp-grey-800 text-white">
           {selectedAnalysis && (
             <>
-              <DialogHeader>
-                <DialogTitle className="flex flex-wrap items-center gap-2 text-white">
-                  <span>{selectedAnalysis.symbol.replace('.NS', '')}</span>
-                  <Badge variant={selectedAnalysis.signal.toLowerCase() === 'buy' ? 'success' : 'warning'}>
-                    {selectedAnalysis.signal.toUpperCase()}
-                  </Badge>
-                </DialogTitle>
-                <DialogDescription className="text-gray-400">
-                  Analysis date {selectedAnalysis.analysis_date || '—'} at {formatPrice(selectedAnalysis.analysis_price)} · Current {selectedAnalysis.current_date || '—'} at {formatPrice(selectedAnalysis.current_price)}
-                </DialogDescription>
+              <DialogHeader className="flex flex-row items-center justify-between gap-4">
+                <div className="flex-1">
+                  <DialogTitle className="flex flex-wrap items-center gap-2 text-white">
+                    <span>{selectedAnalysis.symbol.replace('.NS', '')}</span>
+                    <Badge variant={selectedAnalysis.signal.toLowerCase() === 'buy' ? 'success' : 'warning'}>
+                      {selectedAnalysis.signal.toUpperCase()}
+                    </Badge>
+                  </DialogTitle>
+                  <DialogDescription className="text-gray-400 mt-1.5">
+                    Analysis date {selectedAnalysis.analysis_date || '—'} at {formatPrice(selectedAnalysis.analysis_price)} · Current {selectedAnalysis.current_date || '—'} at {formatPrice(selectedAnalysis.current_price)}
+                  </DialogDescription>
+                </div>
+                <div className="flex items-center gap-2 mr-8 flex-shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="bg-ramp-grey-950 border-ramp-grey-800 hover:bg-ramp-grey-800 text-cyan-300 text-xs"
+                    disabled={exportingSingleFormat !== null}
+                    onClick={() => handleExportSinglePng(selectedAnalysis)}
+                    title="Export Analysis to PNG"
+                  >
+                    {exportingSingleFormat === 'png' ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <FileImage className="h-3.5 w-3.5 mr-1.5" />}
+                    PNG
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="bg-ramp-grey-950 border-ramp-grey-800 hover:bg-ramp-grey-800 text-indigo-300 text-xs"
+                    disabled={exportingSingleFormat !== null}
+                    onClick={() => handleExportSinglePdf(selectedAnalysis)}
+                    title="Export Analysis to PDF"
+                  >
+                    {exportingSingleFormat === 'pdf' ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <FileText className="h-3.5 w-3.5 mr-1.5" />}
+                    PDF
+                  </Button>
+                </div>
               </DialogHeader>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

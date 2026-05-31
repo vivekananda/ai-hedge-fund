@@ -371,6 +371,17 @@ export const api = {
     return res.json();
   },
 
+  cancelWeeklyPipeline: async (runId: number): Promise<WeeklyRun> => {
+    const res = await fetch(`${API_BASE_URL}/weekly-picks/runs/${runId}/cancel`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'Failed to cancel weekly picks pipeline');
+    }
+    return res.json();
+  },
+
   // Simulation runs endpoints
   getSimulationRuns: async (): Promise<SimulationRunMetadata[]> => {
     const res = await fetch(`${API_BASE_URL}/hedge-fund/runs`);

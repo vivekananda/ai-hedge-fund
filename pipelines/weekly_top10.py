@@ -2,10 +2,31 @@ import datetime
 import argparse
 import json
 import html
+from typing import Optional
 from tabulate import tabulate
 from sqlalchemy.orm import Session
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
+
+
+class PipelineCancelledException(Exception):
+    """Custom exception raised when pipeline execution is cancelled by the user."""
+    pass
+
+
+def check_cancelled(db: Session, run_id: Optional[int]) -> bool:
+    """Check if the pipeline run status has been marked as CANCELLED in the database."""
+    if run_id is None:
+        return False
+    try:
+        db.expire_all()
+        from src.db.models import WeeklyPipelineRun
+        run = db.query(WeeklyPipelineRun).filter(WeeklyPipelineRun.id == run_id).first()
+        return run is not None and run.status == "CANCELLED"
+    except Exception as e:
+        print(f"Error checking cancelled status for run {run_id}: {e}")
+        return False
+
 
 from src.db.connection import SessionLocal
 from src.db.queries import init_db, get_all_stocks, save_weekly_pick, delete_weekly_picks
@@ -336,7 +357,7 @@ def _generate_weekly_pick_reviews(
     return reviews
 
 
-def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: str = "Gemini", test_mode: bool = False, watchlist_name: str = "Nifty 500"):
+def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: str = "Gemini", test_mode: bool = False, watchlist_name: str = "Nifty 500", run_id: Optional[int] = None):
     """
     Runs the complete weekly top 50 picks pipeline for Indian stocks.
     """
@@ -376,6 +397,8 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
         stocks_to_process = all_stocks[:20] if test_mode else all_stocks
         
         for stock in stocks_to_process:
+            if check_cancelled(db, run_id):
+                raise PipelineCancelledException("Pipeline execution stopped by user.")
             symbol = stock.symbol
             # Fetch fundamentals from local DB snapshot
             snap = stock.fundamentals
@@ -478,6 +501,8 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
         print(f"Running LLM qualitative agent evaluation across {len(candidate_batches)} batches...")
         
         for idx, batch in enumerate(candidate_batches):
+            if check_cancelled(db, run_id):
+                raise PipelineCancelledException("Pipeline execution stopped by user.")
             print(f"Processing batch {idx+1}/{len(candidate_batches)}: {', '.join(batch)}")
             try:
                 # Run multi-agent hedge fund execution
@@ -528,6 +553,9 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
             
         # Sort by action_rank (descending), confidence (descending), and risk_score (ascending)
         ranked_picks.sort(key=lambda x: (-x["action_rank"], -x["confidence"], x["risk_score"]))
+        
+        if check_cancelled(db, run_id):
+            raise PipelineCancelledException("Pipeline execution stopped by user.")
         
         final_top_50 = ranked_picks[:50]
 

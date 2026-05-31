@@ -316,3 +316,41 @@ def test_delete_weekly_picks_only_removes_requested_watchlist():
         assert get_weekly_picks(db, week_start_date, "Growth") == []
     finally:
         db.close()
+
+
+def test_weekly_pipeline_cancel(monkeypatch):
+    import pytest
+    from src.db.models import WeeklyPipelineRun
+    from pipelines.weekly_top10 import PipelineCancelledException, check_cancelled
+
+    db = _db_session()
+    try:
+        # Create a run that will be cancelled
+        run = WeeklyPipelineRun(run_date="2026-05-30", status="CANCELLED", test_mode=True, created_at="2026-05-30T10:00:00")
+        db.add(run)
+        db.commit()
+
+        # check_cancelled should return True for this run
+        assert check_cancelled(db, run.id) is True
+
+        # Now mock the DB and run pipeline to test termination
+        monkeypatch.setattr(weekly_top10, "init_db", lambda: None)
+        monkeypatch.setattr(weekly_top10, "sync_nifty500_universe", lambda db: None)
+        monkeypatch.setattr(weekly_top10, "SessionLocal", lambda: db)
+        monkeypatch.setattr(
+            weekly_top10,
+            "get_all_stocks",
+            lambda db: [
+                _stock("AAA.NS", 3000),
+            ],
+        )
+
+        with pytest.raises(PipelineCancelledException):
+            weekly_top10.run_weekly_pipeline(
+                model_name="google/gemma-4-e4b",
+                model_provider="LMStudio",
+                test_mode=True,
+                run_id=run.id,
+            )
+    finally:
+        db.close()

@@ -36,6 +36,9 @@ def download_nifty500_constituents() -> list[dict]:
         if not symbol:
             continue
             
+        if "DUMMYVEDL" in symbol.upper():
+            continue
+            
         # Append .NS suffix for Yahoo Finance compatibility
         formatted_symbol = f"{symbol}.NS" if not symbol.endswith(".NS") else symbol
         

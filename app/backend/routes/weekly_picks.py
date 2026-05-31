@@ -161,13 +161,23 @@ def run_pipeline_wrapper(run_id: int, model_name: str, model_provider: str, test
         
         # Import the weekly pipeline function
         from pipelines.weekly_top10 import run_weekly_pipeline
-        run_weekly_pipeline(model_name=model_name, model_provider=model_provider, test_mode=test_mode, watchlist_name=watchlist_name)
+        run_weekly_pipeline(model_name=model_name, model_provider=model_provider, test_mode=test_mode, watchlist_name=watchlist_name, run_id=run_id)
         
-        # Mark as completed
-        update_weekly_run(db, run_id, "COMPLETED")
+        # Mark as completed (only if not cancelled in the meantime)
+        db.rollback()
+        current_run = db.query(WeeklyPipelineRun).filter(WeeklyPipelineRun.id == run_id).first()
+        if current_run and current_run.status == "CANCELLED":
+            pass
+        else:
+            update_weekly_run(db, run_id, "COMPLETED")
     except Exception as e:
-        # Mark as failed with error message
-        update_weekly_run(db, run_id, "FAILED", error_message=str(e))
+        # Mark as failed or cancelled with error message
+        db.rollback()
+        current_run = db.query(WeeklyPipelineRun).filter(WeeklyPipelineRun.id == run_id).first()
+        if current_run and current_run.status == "CANCELLED":
+            update_weekly_run(db, run_id, "CANCELLED", error_message="Pipeline cancelled by user")
+        else:
+            update_weekly_run(db, run_id, "FAILED", error_message=str(e))
     finally:
         db.close()
 
@@ -220,3 +230,37 @@ def trigger_pipeline(request: RunPipelineRequest, background_tasks: BackgroundTa
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error triggering pipeline: {str(e)}")
+
+
+@router.post("/runs/{run_id}/cancel", response_model=WeeklyRunResponse)
+def cancel_pipeline_run(run_id: int, db: Session = Depends(get_db)):
+    """Cancel an active or pending weekly pipeline execution."""
+    try:
+        run = db.query(WeeklyPipelineRun).filter(WeeklyPipelineRun.id == run_id).first()
+        if not run:
+            raise HTTPException(status_code=404, detail=f"Pipeline run {run_id} not found.")
+        
+        if run.status not in ["PENDING", "RUNNING"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot cancel pipeline run with status: {run.status}."
+            )
+            
+        run.status = "CANCELLED"
+        run.error_message = "Cancellation requested..."
+        db.commit()
+        db.refresh(run)
+        
+        return WeeklyRunResponse(
+            id=run.id,
+            run_date=run.run_date,
+            status=run.status,
+            error_message=run.error_message,
+            test_mode=run.test_mode,
+            created_at=run.created_at,
+            watchlist_name=run.watchlist_name or "Nifty 500"
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error cancelling pipeline run: {str(e)}")
