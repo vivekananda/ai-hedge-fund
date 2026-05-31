@@ -338,9 +338,9 @@ def _generate_weekly_pick_reviews(
 
 def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: str = "Gemini", test_mode: bool = False, watchlist_name: str = "Nifty 500"):
     """
-    Runs the complete weekly top 10 picks pipeline for Indian stocks.
+    Runs the complete weekly top 50 picks pipeline for Indian stocks.
     """
-    print(f"[{datetime.datetime.now()}] Starting Weekly Top 10 Pipeline (Universe: {watchlist_name})...")
+    print(f"[{datetime.datetime.now()}] Starting Weekly Top 50 Pipeline (Universe: {watchlist_name})...")
     
     # 1. Initialize DB and sync universe
     init_db()
@@ -390,6 +390,8 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
             # Fetch EOD price history (past 60 days) to compute technical filters
             price_above_44_sma = False
             rsi_val = 50.0
+            analysis_price = None
+            analysis_price_date = None
             
             try:
                 # Retrieve past 100 days of prices
@@ -397,6 +399,14 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                 end_date = datetime.date.today().strftime("%Y-%m-%d")
                 
                 prices_df = get_price_data(symbol, start_date, end_date)
+                if not prices_df.empty:
+                    analysis_price = _safe_float(prices_df["close"].iloc[-1], None)
+                    latest_index = prices_df.index[-1]
+                    if hasattr(latest_index, "strftime"):
+                        analysis_price_date = latest_index.strftime("%Y-%m-%d")
+                    else:
+                        analysis_price_date = str(latest_index)[:50]
+
                 if not prices_df.empty and len(prices_df) >= 44:
                     sma_44 = calculate_sma(prices_df, 44)
                     rsi = calculate_rsi(prices_df, 14)
@@ -429,7 +439,9 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                 "roce": roce,
                 "debt_to_equity": debt_to_equity,
                 "price_above_44": price_above_44_sma,
-                "rsi": rsi_val
+                "rsi": rsi_val,
+                "analysis_price": analysis_price,
+                "analysis_price_date": analysis_price_date
             })
             
         # Sort candidates: primary by score descending, secondary by market cap descending
@@ -487,7 +499,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
             except Exception as e:
                 print(f"Error running agents for batch {batch}: {e}")
                 
-        # 4. Filter and select the final Top 10 Picks
+        # 4. Filter and select the final Top 50 Picks
         # Sort based on action = "buy" first, then confidence descending, then risk_score ascending
         ranked_picks = []
         for symbol, dec in all_decisions.items():
@@ -517,17 +529,17 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
         # Sort by action_rank (descending), confidence (descending), and risk_score (ascending)
         ranked_picks.sort(key=lambda x: (-x["action_rank"], -x["confidence"], x["risk_score"]))
         
-        final_top_10 = ranked_picks[:10]
+        final_top_50 = ranked_picks[:50]
 
         candidate_lookup = {candidate["symbol"]: candidate for candidate in top_candidates}
         qualitative_reviews = _generate_weekly_pick_reviews(
-            picks=final_top_10,
+            picks=final_top_50,
             candidate_lookup=candidate_lookup,
             analyst_signals=all_analyst_signals,
             model_name=model_name,
             model_provider=model_provider,
         )
-        for pick in final_top_10:
+        for pick in final_top_50:
             review = qualitative_reviews.get(pick["symbol"])
             if review:
                 pick["thesis"] = review.thesis
@@ -537,17 +549,39 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
         week_start_date = datetime.date.today().strftime("%Y-%m-%d")
         
         print("\n" + "="*80)
-        print(f"                WEEKLY TOP 10 INDIAN STOCK PICKS - {week_start_date}")
+        print(f"                WEEKLY TOP 50 INDIAN STOCK PICKS - {week_start_date}")
         print("="*80)
 
         # Replace the cached list for this date/watchlist so symbols that dropped out
-        # of the top 10 do not remain visible from a previous run.
+        # of the top 50 do not remain visible from a previous run.
         delete_weekly_picks(db, week_start_date, watchlist_name=watchlist_name)
         
         table_data = []
-        for rank_idx, pick in enumerate(final_top_10):
+        for rank_idx, pick in enumerate(final_top_50):
             rank = rank_idx + 1
             symbol = pick["symbol"]
+            candidate = candidate_lookup.get(symbol, {})
+            analysis_price = candidate.get("analysis_price")
+            analysis_date = candidate.get("analysis_price_date") or week_start_date
+            analysis_details = {
+                "symbol": symbol,
+                "analysis_date": analysis_date,
+                "analysis_price": analysis_price,
+                "current_price_at_analysis": analysis_price,
+                "portfolio_decision": {
+                    "action": pick.get("action"),
+                    "confidence": pick.get("confidence"),
+                    "risk_score": pick.get("risk_score"),
+                    "reasoning": pick.get("reasoning"),
+                },
+                "screen_metrics": candidate,
+                "agent_sections": _detailed_agent_sections(symbol, all_analyst_signals),
+                "analyst_signals": {
+                    agent_name: signals.get(symbol)
+                    for agent_name, signals in all_analyst_signals.items()
+                    if isinstance(signals, dict) and symbol in signals
+                },
+            }
             
             # Save weekly pick
             save_weekly_pick(
@@ -559,7 +593,11 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                 score=pick["confidence"],
                 thesis=pick["thesis"],
                 risk_score=pick["risk_score"],
-                watchlist_name=watchlist_name
+                watchlist_name=watchlist_name,
+                analysis_date=analysis_date,
+                analysis_price=analysis_price,
+                current_price_at_analysis=analysis_price,
+                analysis_details=json.dumps(analysis_details, default=str),
             )
             
             table_data.append([
@@ -579,7 +617,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
         db.close()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Weekly Top 10 Indian Stock Picks Pipeline")
+    parser = argparse.ArgumentParser(description="Weekly Top 50 Indian Stock Picks Pipeline")
     parser.add_argument("--model", type=str, default="gemini-2.0-flash", help="LLM model name")
     parser.add_argument("--provider", type=str, default="Gemini", help="LLM provider name")
     parser.add_argument("--test", action="store_true", help="Run in speed test mode with limited tickers")

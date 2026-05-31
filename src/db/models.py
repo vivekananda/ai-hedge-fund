@@ -61,6 +61,10 @@ class WeeklyPick(Base):
     thesis = Column(Text, nullable=True)     # LLM thesis
     risk_score = Column(Float, nullable=True) # Qualitative risk score
     watchlist_name = Column(String, nullable=True, index=True)
+    analysis_date = Column(String, nullable=True, index=True)
+    analysis_price = Column(Float, nullable=True)
+    current_price_at_analysis = Column(Float, nullable=True)
+    analysis_details = Column(Text, nullable=True)
 
     stock = relationship("Stock", back_populates="weekly_picks")
 
@@ -101,5 +105,4 @@ class Watchlist(Base):
     name = Column(String, nullable=False, unique=True, index=True)
     tickers = Column(Text, nullable=False)                  # Comma-separated symbols
     created_at = Column(String, nullable=False)             # ISO timestamp
-
 

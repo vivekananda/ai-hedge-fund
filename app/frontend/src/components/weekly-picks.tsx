@@ -3,6 +3,7 @@ import { Calendar, Play, Loader2, Shield, AlertCircle, PlusCircle, MinusCircle, 
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { ModelSelector } from './ui/llm-selector';
 import { getModels, LanguageModel } from '@/data/models';
 import { api, WeeklyPick, WeeklyRun } from '@/services/api';
@@ -118,6 +119,10 @@ export function WeeklyPicksDashboard() {
     if (val === null || val === undefined) return '—';
     return `${val > 0 ? '+' : ''}${val.toFixed(1)}%`;
   };
+  const formatPrice = (val: number | null | undefined) => {
+    if (val === null || val === undefined) return '—';
+    return `₹${val.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  };
 
   // Fetch stocks list to display names inside watchlist
   useEffect(() => {
@@ -162,6 +167,7 @@ export function WeeklyPicksDashboard() {
   const [dates, setDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [picks, setPicks] = useState<WeeklyPick[]>([]);
+  const [selectedAnalysis, setSelectedAnalysis] = useState<WeeklyPick | null>(null);
   const [loadingPicks, setLoadingPicks] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<'png' | 'pdf' | null>(null);
   const [activeRuns, setActiveRuns] = useState<WeeklyRun[]>([]);
@@ -242,6 +248,14 @@ export function WeeklyPicksDashboard() {
     } catch (err) {
       console.error('Error fetching runs:', err);
     }
+  };
+
+  const openHistoricalRun = (run: WeeklyRun) => {
+    const runWatchlist = run.watchlist_name || 'Nifty 500';
+    setSelectedWatchlist(runWatchlist);
+    setSelectedDate(run.run_date);
+    fetchDates(runWatchlist);
+    fetchPicks(run.run_date, runWatchlist);
   };
 
   const handleRunPipeline = async () => {
@@ -348,7 +362,7 @@ export function WeeklyPicksDashboard() {
 
       ctx.fillStyle = '#ffffff';
       ctx.font = '700 44px Inter, Arial, sans-serif';
-      ctx.fillText('Top 10 Picks', padding, 78);
+      ctx.fillText('Top 50 Picks', padding, 78);
       ctx.fillStyle = '#9ca3af';
       ctx.font = '500 24px Inter, Arial, sans-serif';
       ctx.fillText(`${selectedWatchlist} • Week of ${selectedDate ? formatDate(selectedDate) : 'Latest analysis'}`, padding, 118);
@@ -468,7 +482,7 @@ export function WeeklyPicksDashboard() {
         'BT',
         '/F2 20 Tf',
         `${margin} ${pageHeight - margin} Td`,
-        index === 0 ? `(Top 10 Picks) Tj` : `(Top 10 Picks continued) Tj`,
+        index === 0 ? `(Top 50 Picks) Tj` : `(Top 50 Picks continued) Tj`,
         '/F1 10 Tf',
         `0 -${lineHeight * 1.6} Td`,
         ...pageLines.map((line) => `(${escapePdfText(line)}) Tj 0 -${lineHeight} Td`),
@@ -558,7 +572,7 @@ export function WeeklyPicksDashboard() {
                 Trigger Weekly Analysis Pipeline
               </CardTitle>
               <CardDescription className="text-gray-400 mt-1.5">
-                Run the multi-agent hedge fund analyzer across {selectedWatchlist === 'Nifty 500' ? 'Nifty 500 candidate stocks' : `candidate stocks in "${selectedWatchlist}"`}. Technical filters screen down candidates, then qualitative AI agents decide the top 10 buys.
+                Run the multi-agent hedge fund analyzer across {selectedWatchlist === 'Nifty 500' ? 'Nifty 500 candidate stocks' : `candidate stocks in "${selectedWatchlist}"`}. Technical filters screen down candidates, then qualitative AI agents decide the top 50 buys.
               </CardDescription>
             </div>
             <div className="flex flex-col items-end gap-2 shrink-0 ml-4">
@@ -723,8 +737,19 @@ export function WeeklyPicksDashboard() {
                     const statusColor = run.status === 'COMPLETED' ? 'text-emerald-400 bg-emerald-500/10' :
                                       run.status === 'FAILED' ? 'text-rose-400 bg-rose-500/10' :
                                       'text-cyan-400 bg-cyan-500/10 animate-pulse';
+                    const canOpenRun = run.status === 'COMPLETED';
+                    const rowClassName = `w-full text-left bg-ramp-grey-950 border border-ramp-grey-850 rounded-lg p-2 text-[10px] space-y-1 ${
+                      canOpenRun ? 'hover:border-cyan-500/50 hover:bg-ramp-grey-900 cursor-pointer transition-colors' : ''
+                    }`;
+                    const RowTag = canOpenRun ? 'button' : 'div';
                     return (
-                      <div key={run.id} className="bg-ramp-grey-950 border border-ramp-grey-850 rounded-lg p-2 text-[10px] space-y-1">
+                      <RowTag
+                        key={run.id}
+                        type={canOpenRun ? 'button' : undefined}
+                        onClick={canOpenRun ? () => openHistoricalRun(run) : undefined}
+                        className={rowClassName}
+                        title={canOpenRun ? `Open ${run.watchlist_name || 'Nifty 500'} analysis from ${formatDate(run.run_date)}` : undefined}
+                      >
                         <div className="flex justify-between items-center">
                           <span className="font-bold text-gray-200">
                             {new Date(run.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} {new Date(run.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
@@ -742,7 +767,7 @@ export function WeeklyPicksDashboard() {
                             Error: {run.error_message}
                           </p>
                         )}
-                      </div>
+                      </RowTag>
                     );
                   })}
                 </div>
@@ -756,13 +781,13 @@ export function WeeklyPicksDashboard() {
       {/* Lower Section: Picks Grid & Watchlist Panel */}
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         
-        {/* Left Side: Top 10 Picks List */}
+        {/* Left Side: Top 50 Picks List */}
         <div className="flex-grow flex-1 w-full space-y-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <h2 className="min-w-0 text-white flex items-start gap-2">
               <Shield className="h-5 w-5 text-cyan-400 mt-0.5 flex-shrink-0" />
               <span className="min-w-0 flex flex-col">
-                <span className="text-xl font-bold tracking-tight leading-tight">Top 10 Picks</span>
+                <span className="text-xl font-bold tracking-tight leading-tight">Top 50 Picks</span>
                 <span className="text-xs font-medium text-gray-400 leading-snug">
                   {selectedWatchlist} • Week of {selectedDate ? formatDate(selectedDate) : '...'}
                 </span>
@@ -776,7 +801,7 @@ export function WeeklyPicksDashboard() {
                 className="bg-ramp-grey-950 border-ramp-grey-800 hover:bg-ramp-grey-800 text-cyan-300"
                 disabled={loadingPicks || picks.length === 0 || exportingFormat !== null}
                 onClick={handleExportPng}
-                title="Export Top 10 Picks as PNG"
+                title="Export Top 50 Picks as PNG"
               >
                 {exportingFormat === 'png' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileImage className="h-4 w-4 mr-2" />}
                 PNG
@@ -787,7 +812,7 @@ export function WeeklyPicksDashboard() {
                 className="bg-ramp-grey-950 border-ramp-grey-800 hover:bg-ramp-grey-800 text-indigo-300"
                 disabled={loadingPicks || picks.length === 0 || exportingFormat !== null}
                 onClick={handleExportPdf}
-                title="Export Top 10 Picks as PDF"
+                title="Export Top 50 Picks as PDF"
               >
                 {exportingFormat === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileText className="h-4 w-4 mr-2" />}
                 PDF
@@ -898,6 +923,21 @@ export function WeeklyPicksDashboard() {
                               </div>
                             </div>
 
+                            <div className="grid grid-cols-2 gap-2 bg-ramp-grey-950/50 p-2.5 rounded-lg border border-ramp-grey-800/40 text-xs">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Analysis Price</span>
+                                <span className="font-bold text-gray-200 text-xs leading-none mt-0.5">{formatPrice(pick.analysis_price)}</span>
+                                <span className="text-[9px] text-gray-500">{pick.analysis_date || '—'}</span>
+                              </div>
+                              <div className="flex flex-col gap-0.5 border-l border-ramp-grey-800/40 pl-2.5">
+                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Current Move</span>
+                                <span className={`font-bold text-xs leading-none mt-0.5 ${(pick.price_change_pct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {formatPercent(pick.price_change_pct)}
+                                </span>
+                                <span className="text-[9px] text-gray-500">{formatPrice(pick.current_price)} · {pick.current_date || '—'}</span>
+                              </div>
+                            </div>
+
                             {/* Fundamental Ratios Grid */}
                             {(() => {
                               const stockDetail = stocks.find(s => s.symbol === pick.symbol);
@@ -961,6 +1001,15 @@ export function WeeklyPicksDashboard() {
                               dangerouslySetInnerHTML={{ __html: pick.thesis }}
                             />
                           </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 justify-start bg-ramp-grey-950 border-ramp-grey-800 hover:bg-ramp-grey-800 text-cyan-300 text-xs"
+                            onClick={() => setSelectedAnalysis(pick)}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                            Open complete analysis
+                          </Button>
                         </div>
                       </div>
                     </CardContent>
@@ -1108,6 +1157,66 @@ export function WeeklyPicksDashboard() {
         )}
 
       </div>
+
+      <Dialog open={!!selectedAnalysis} onOpenChange={(open) => !open && setSelectedAnalysis(null)}>
+        <DialogContent className="max-w-5xl max-h-[86vh] overflow-hidden bg-ramp-grey-900 border-ramp-grey-800 text-white">
+          {selectedAnalysis && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex flex-wrap items-center gap-2 text-white">
+                  <span>{selectedAnalysis.symbol.replace('.NS', '')}</span>
+                  <Badge variant={selectedAnalysis.signal.toLowerCase() === 'buy' ? 'success' : 'warning'}>
+                    {selectedAnalysis.signal.toUpperCase()}
+                  </Badge>
+                </DialogTitle>
+                <DialogDescription className="text-gray-400">
+                  Analysis date {selectedAnalysis.analysis_date || '—'} at {formatPrice(selectedAnalysis.analysis_price)} · Current {selectedAnalysis.current_date || '—'} at {formatPrice(selectedAnalysis.current_price)}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                  <span className="text-[10px] text-gray-500 uppercase font-semibold">Analysis Price</span>
+                  <p className="text-sm font-bold text-gray-100 mt-1">{formatPrice(selectedAnalysis.analysis_price)}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{selectedAnalysis.analysis_date || '—'}</p>
+                </div>
+                <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                  <span className="text-[10px] text-gray-500 uppercase font-semibold">Captured Current</span>
+                  <p className="text-sm font-bold text-gray-100 mt-1">{formatPrice(selectedAnalysis.current_price_at_analysis)}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">At analysis time</p>
+                </div>
+                <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                  <span className="text-[10px] text-gray-500 uppercase font-semibold">Current Price</span>
+                  <p className="text-sm font-bold text-gray-100 mt-1">{formatPrice(selectedAnalysis.current_price)}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{selectedAnalysis.current_date || 'Latest cached'}</p>
+                </div>
+                <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                  <span className="text-[10px] text-gray-500 uppercase font-semibold">Move Since Analysis</span>
+                  <p className={`text-sm font-bold mt-1 ${(selectedAnalysis.price_change_pct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {formatPercent(selectedAnalysis.price_change_pct)}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Analysis price vs current</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
+                <div className="min-h-0">
+                  <h3 className="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-2">Qualitative Thesis</h3>
+                  <div className="max-h-[46vh] overflow-y-auto bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3 text-xs text-gray-300 leading-relaxed">
+                    <div className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: selectedAnalysis.thesis }} />
+                  </div>
+                </div>
+                <div className="min-h-0">
+                  <h3 className="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-2">Complete Stored Analysis</h3>
+                  <pre className="max-h-[46vh] overflow-auto bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3 text-[11px] text-gray-300 leading-relaxed whitespace-pre-wrap">
+                    {JSON.stringify(selectedAnalysis.analysis_details || {}, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Slide-out details drawer */}
       <div className={`fixed top-[57px] right-0 bottom-0 z-30 w-[460px] bg-ramp-grey-900 border-l border-ramp-grey-800 transform ${selectedStock ? 'translate-x-0' : 'translate-x-full'} transition-transform duration-300 ease-in-out shadow-2xl flex flex-col justify-between`}>

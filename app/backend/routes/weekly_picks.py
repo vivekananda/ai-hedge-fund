@@ -1,11 +1,12 @@
 import datetime
+import json
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.db.connection import SessionLocal
-from src.db.models import WeeklyPick, WeeklyPipelineRun, Stock
+from src.db.models import DailyPrice, WeeklyPick, WeeklyPipelineRun, Stock
 from src.db.queries import (
     get_weekly_picks,
     create_weekly_run,
@@ -32,6 +33,7 @@ class RunPipelineRequest(BaseModel):
 
 
 class WeeklyPickResponse(BaseModel):
+    id: int
     rank: int
     symbol: str
     name: str
@@ -39,6 +41,13 @@ class WeeklyPickResponse(BaseModel):
     score: float
     thesis: str
     risk_score: float
+    analysis_date: Optional[str] = None
+    analysis_price: Optional[float] = None
+    current_price_at_analysis: Optional[float] = None
+    current_date: Optional[str] = None
+    current_price: Optional[float] = None
+    price_change_pct: Optional[float] = None
+    analysis_details: Optional[dict] = None
 
 
 class WeeklyRunResponse(BaseModel):
@@ -79,16 +88,43 @@ def get_picks_by_date(date: str, watchlist_name: Optional[str] = "Nifty 500", db
             # Join with Stock to get name
             stock = db.query(Stock).filter(Stock.symbol == p.symbol).first()
             name = stock.name if stock else p.symbol
+            latest_price = (
+                db.query(DailyPrice)
+                .filter(DailyPrice.symbol == p.symbol)
+                .order_by(DailyPrice.date.desc())
+                .first()
+            )
+            current_price = latest_price.close if latest_price else None
+            current_date = latest_price.date if latest_price else None
+            analysis_price = p.analysis_price
+            price_change_pct = None
+            if analysis_price and current_price is not None:
+                price_change_pct = round(((current_price - analysis_price) / analysis_price) * 100, 2)
+
+            analysis_details = None
+            if p.analysis_details:
+                try:
+                    analysis_details = json.loads(p.analysis_details)
+                except json.JSONDecodeError:
+                    analysis_details = {"raw": p.analysis_details}
             
             response.append(
                 WeeklyPickResponse(
+                    id=p.id,
                     rank=p.rank,
                     symbol=p.symbol,
                     name=name,
                     signal=p.signal,
                     score=p.score or 0.0,
                     thesis=p.thesis or "",
-                    risk_score=p.risk_score or 0.0
+                    risk_score=p.risk_score or 0.0,
+                    analysis_date=p.analysis_date or p.week_start_date,
+                    analysis_price=analysis_price,
+                    current_price_at_analysis=p.current_price_at_analysis,
+                    current_date=current_date,
+                    current_price=current_price,
+                    price_change_pct=price_change_pct,
+                    analysis_details=analysis_details,
                 )
             )
         return response

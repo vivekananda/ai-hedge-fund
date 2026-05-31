@@ -16,6 +16,19 @@ def init_db():
         db.commit()
     except Exception:
         db.rollback()
+
+    weekly_pick_columns = [
+        ("analysis_date", "VARCHAR"),
+        ("analysis_price", "FLOAT"),
+        ("current_price_at_analysis", "FLOAT"),
+        ("analysis_details", "TEXT"),
+    ]
+    for column_name, column_type in weekly_pick_columns:
+        try:
+            db.execute(text(f"ALTER TABLE weekly_picks ADD COLUMN {column_name} {column_type}"))
+            db.commit()
+        except Exception:
+            db.rollback()
         
     try:
         db.execute(text("ALTER TABLE weekly_pipeline_runs ADD COLUMN watchlist_name VARCHAR"))
@@ -133,7 +146,11 @@ def save_weekly_pick(
     score: float,
     thesis: str,
     risk_score: float,
-    watchlist_name: str = "Nifty 500"
+    watchlist_name: str = "Nifty 500",
+    analysis_date: str = None,
+    analysis_price: float = None,
+    current_price_at_analysis: float = None,
+    analysis_details: str = None,
 ) -> WeeklyPick:
     """Save a weekly pick, updating if it already exists for the week, symbol, and watchlist."""
     query = db.query(WeeklyPick).filter(
@@ -162,6 +179,10 @@ def save_weekly_pick(
     pick.score = score
     pick.thesis = thesis
     pick.risk_score = risk_score
+    pick.analysis_date = analysis_date or week_start_date
+    pick.analysis_price = analysis_price
+    pick.current_price_at_analysis = current_price_at_analysis
+    pick.analysis_details = analysis_details
     
     db.commit()
     return pick
@@ -342,4 +363,3 @@ def delete_watchlist(db: Session, name: str) -> bool:
         db.commit()
         return True
     return False
-

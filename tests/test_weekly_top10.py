@@ -247,7 +247,7 @@ def test_weekly_pipeline_saves_non_empty_fallback_thesis_when_decisions_have_no_
     assert all(1.0 <= pick["risk_score"] <= 10.0 for pick in saved_picks)
 
 
-def test_delete_weekly_picks_removes_stale_legacy_nifty_rows_before_replacing_top_10():
+def test_delete_weekly_picks_removes_stale_legacy_nifty_rows_before_replacing_list():
     db = _db_session()
     try:
         for idx in range(11):
@@ -284,7 +284,7 @@ def test_delete_weekly_picks_removes_stale_legacy_nifty_rows_before_replacing_to
                 rank=idx + 1,
                 signal="buy",
                 score=90.0 - idx,
-                thesis="fresh top 10 pick",
+                thesis="fresh top 50 pick",
                 risk_score=3.0,
                 watchlist_name="Nifty 500",
             )

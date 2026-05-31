@@ -13,6 +13,7 @@ export interface Watchlist {
 }
 
 export interface WeeklyPick {
+  id: number;
   rank: number;
   symbol: string;
   name: string;
@@ -20,6 +21,13 @@ export interface WeeklyPick {
   score: number;
   thesis: string;
   risk_score: number;
+  analysis_date?: string;
+  analysis_price?: number | null;
+  current_price_at_analysis?: number | null;
+  current_date?: string | null;
+  current_price?: number | null;
+  price_change_pct?: number | null;
+  analysis_details?: Record<string, any> | null;
 }
 
 export interface WeeklyRun {
