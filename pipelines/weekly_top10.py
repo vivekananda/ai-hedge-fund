@@ -17,7 +17,7 @@ from src.utils.llm import call_llm
 
 
 class WeeklyPickReview(BaseModel):
-    thesis: str = Field(description="Plain text qualitative thesis for the weekly pick")
+    thesis: str = Field(description="Plain text qualitative thesis with agent headings and bullet points")
     risk_score: float = Field(description="Risk score from 1.0 low risk to 10.0 high risk")
 
 
@@ -51,6 +51,106 @@ def _candidate_metrics_text(candidate: dict | None) -> str:
         f"sales growth {_format_pct(candidate.get('sales_growth'))}, "
         f"price {trend} 44-SMA, RSI {_safe_float(candidate.get('rsi'), 50.0):.1f}"
     )
+
+
+def _agent_display_name(agent_name: str) -> str:
+    return agent_name.replace("_agent", "").replace("_", " ").title()
+
+
+def _humanize_key(key: str) -> str:
+    return key.replace("_", " ").title()
+
+
+def _format_detail_value(value, depth: int = 0) -> str:
+    if value is None:
+        return "N/A"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, float):
+        if abs(value) < 1:
+            return f"{value:.2%}"
+        return f"{value:,.2f}"
+    if isinstance(value, int):
+        return f"{value:,}"
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        items = []
+        for key, nested_value in list(value.items())[:4]:
+            items.append(f"{_humanize_key(str(key))}: {_format_detail_value(nested_value, depth + 1)}")
+        return ", ".join(items)
+    if isinstance(value, list):
+        return ", ".join(_format_detail_value(item, depth + 1) for item in value[:4])
+    return str(value)
+
+
+def _agent_reasoning_bullets(signal: dict, max_bullets: int = 4) -> list[str]:
+    bullets = []
+    if signal.get("signal") is not None or signal.get("confidence") is not None:
+        bullets.append(
+            f"Overall signal: {signal.get('signal', 'n/a')} "
+            f"({_safe_float(signal.get('confidence'), 0.0):.0f}% confidence)"
+        )
+
+    reasoning = signal.get("reasoning")
+    if isinstance(reasoning, dict):
+        for key, value in reasoning.items():
+            if len(bullets) >= max_bullets:
+                break
+
+            label = _humanize_key(str(key))
+            if isinstance(value, dict):
+                nested_signal = value.get("signal")
+                details = value.get("details")
+                metrics = value.get("metrics")
+
+                fragments = []
+                if nested_signal:
+                    fragments.append(str(nested_signal))
+                if details:
+                    fragments.append(_format_detail_value(details))
+                elif metrics:
+                    fragments.append(_format_detail_value(metrics))
+                else:
+                    fragments.append(_format_detail_value(value))
+
+                bullet = f"{label}: " + " - ".join(fragment for fragment in fragments if fragment)
+            else:
+                bullet = f"{label}: {_format_detail_value(value)}"
+
+            if len(bullet) > 260:
+                bullet = bullet[:257].rstrip() + "..."
+            bullets.append(bullet)
+
+    return bullets
+
+
+def _detailed_agent_sections(symbol: str, analyst_signals: dict) -> list[dict]:
+    sections = []
+    for agent_name, signals in (analyst_signals or {}).items():
+        signal = (signals or {}).get(symbol)
+        if not signal:
+            continue
+
+        bullets = _agent_reasoning_bullets(signal)
+        if agent_name == "risk_management_agent":
+            volatility = signal.get("volatility_metrics", {}).get("annualized_volatility")
+            if volatility is not None:
+                bullets.append(f"Annualized volatility: {_safe_float(volatility):.1%}")
+            max_position = signal.get("remaining_position_limit") or signal.get("max_position_size")
+            if max_position is not None:
+                bullets.append(f"Position limit: {_format_detail_value(max_position)}")
+
+        sections.append(
+            {
+                "agent": _agent_display_name(agent_name),
+                "signal": signal.get("signal", "n/a"),
+                "confidence": _safe_float(signal.get("confidence"), 0.0),
+                "bullets": bullets[:5],
+            }
+        )
+
+    return sections
 
 
 def _compact_signal_summary(symbol: str, analyst_signals: dict) -> list[str]:
@@ -107,18 +207,27 @@ def _fallback_risk_score(symbol: str, candidate: dict | None, analyst_signals: d
 
 
 def _fallback_thesis(symbol: str, decision: dict, candidate: dict | None, analyst_signals: dict) -> str:
-    signal_summary = _compact_signal_summary(symbol, analyst_signals)
-    analyst_text = "; ".join(signal_summary) if signal_summary else "analyst signals were limited"
     reasoning = decision.get("reasoning") or "portfolio manager did not add a separate note"
     action = str(decision.get("action", "hold")).upper()
     confidence = _safe_float(decision.get("confidence"), 0.0)
 
-    return (
-        f"{action} with {confidence:.0f}% confidence. "
-        f"The screen shows {_candidate_metrics_text(candidate)}. "
-        f"Agent view: {analyst_text}. "
-        f"Portfolio note: {reasoning}."
-    )
+    lines = [
+        "Decision Summary",
+        f"- Portfolio action: {action} with {confidence:.0f}% confidence",
+        f"- Quant screen: {_candidate_metrics_text(candidate)}",
+        f"- Portfolio note: {reasoning}",
+        "",
+        "Agent view:",
+    ]
+
+    agent_sections = _detailed_agent_sections(symbol, analyst_signals)
+    if not agent_sections:
+        lines.append("- Analyst signals were limited for this run.")
+    for section in agent_sections:
+        lines.extend(["", section["agent"]])
+        lines.extend(f"- {bullet}" for bullet in section["bullets"])
+
+    return "\n".join(lines)
 
 
 def _generate_weekly_pick_reviews(
@@ -159,6 +268,7 @@ def _generate_weekly_pick_reviews(
             },
             "screen_metrics": candidate_lookup.get(symbol, {}),
             "analyst_summary": _compact_signal_summary(symbol, analyst_signals),
+            "agent_sections": _detailed_agent_sections(symbol, analyst_signals),
             "fallback_risk_score": fallback_reviews[symbol].risk_score,
         }
 
@@ -168,7 +278,10 @@ def _generate_weekly_pick_reviews(
                 "system",
                 "You write weekly stock-pick reviews for an Indian equity dashboard. "
                 "Use only the supplied metrics and agent summaries. "
-                "Return JSON only. Each thesis must be plain text, balanced, and under 65 words. "
+                "Return JSON only. Each thesis must be plain text, balanced, and richly detailed. "
+                "Start with a short 'Decision Summary' section, then add one heading for each agent in agent_sections. "
+                "Under every heading, include 2-4 concise bullet points using '-' bullets. "
+                "Keep each thesis under 220 words and do not use markdown tables or HTML. "
                 "Risk score is 1.0 low risk to 10.0 high risk.",
             ),
             (
