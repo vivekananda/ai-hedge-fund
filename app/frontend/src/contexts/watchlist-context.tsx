@@ -31,6 +31,12 @@ interface WatchlistContextType {
 
 const WatchlistContext = createContext<WatchlistContextType | undefined>(undefined);
 
+const normalizeTicker = (ticker: string) => {
+  const clean = ticker.trim().toUpperCase();
+  if (!clean) return '';
+  return clean.includes('.') ? clean : `${clean}.NS`;
+};
+
 export function WatchlistProvider({ children }: { children: ReactNode }) {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [activeWatchlistName, setActiveWatchlistNameState] = useState<string | null>(() => {
@@ -124,6 +130,9 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
   // Add stock to active watchlist
   const addTickerToActive = async (ticker: string): Promise<void> => {
+    const normalizedTicker = normalizeTicker(ticker);
+    if (!normalizedTicker) return;
+
     if (!activeWatchlistName || !activeWatchlist) {
       // If there are no watchlists, create a default one
       let listToUpdate: Watchlist;
@@ -131,11 +140,12 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         listToUpdate = await createWatchlist('My Watchlist');
       } else {
         listToUpdate = watchlists[0];
+        setActiveWatchlistName(listToUpdate.name);
       }
       
       const updatedTickers = [...listToUpdate.tickers];
-      if (!updatedTickers.includes(ticker)) {
-        updatedTickers.push(ticker);
+      if (!updatedTickers.includes(normalizedTicker)) {
+        updatedTickers.push(normalizedTicker);
         const saved = await api.saveWatchlist(listToUpdate.name, updatedTickers);
         setWatchlists(prev => prev.map(w => w.name === saved.name ? saved : w));
       }
@@ -143,8 +153,8 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     }
 
     const updatedTickers = [...activeWatchlist.tickers];
-    if (!updatedTickers.includes(ticker)) {
-      updatedTickers.push(ticker);
+    if (!updatedTickers.includes(normalizedTicker)) {
+      updatedTickers.push(normalizedTicker);
       const saved = await api.saveWatchlist(activeWatchlist.name, updatedTickers);
       setWatchlists(prev => prev.map(w => w.name === saved.name ? saved : w));
     }
@@ -162,7 +172,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   // Helper to check if stock is in active watchlist
   const isInActiveWatchlist = (ticker: string): boolean => {
     if (!activeWatchlist) return false;
-    return activeWatchlist.tickers.includes(ticker);
+    return activeWatchlist.tickers.includes(normalizeTicker(ticker));
   };
 
   // Fire simulation run

@@ -96,6 +96,8 @@ export function Screener() {
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [newListName, setNewListName] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
+  const [manualTicker, setManualTicker] = useState('');
+  const [manualTickerError, setManualTickerError] = useState<string | null>(null);
   
   // Fetch stocks on mount
   useEffect(() => {
@@ -354,6 +356,17 @@ export function Screener() {
       } catch (err: any) {
         alert(err.message || 'Failed to delete watchlist');
       }
+    }
+  };
+
+  const handleAddManualTicker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setManualTickerError(null);
+    try {
+      await addTickerToActive(manualTicker);
+      setManualTicker('');
+    } catch (err: any) {
+      setManualTickerError(err.message || 'Failed to add ticker');
     }
   };
 
@@ -730,10 +743,34 @@ export function Screener() {
               </div>
 
               {/* Watchlist Tickers List */}
+              <form onSubmit={handleAddManualTicker} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={manualTicker}
+                  onChange={(e) => {
+                    setManualTicker(e.target.value);
+                    setManualTickerError(null);
+                  }}
+                  placeholder="TICKER"
+                  className="min-w-0 flex-1 bg-ramp-grey-1000 border border-ramp-grey-850 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-500"
+                />
+                <button
+                  type="submit"
+                  disabled={!manualTicker.trim()}
+                  className="bg-ramp-grey-850 hover:bg-ramp-grey-800 disabled:opacity-50 disabled:hover:bg-ramp-grey-850 border border-ramp-grey-800 text-gray-300 p-1.5 rounded-lg text-xs hover:text-white transition-all flex items-center justify-center"
+                  title="Add ticker"
+                >
+                  <Plus size={14} />
+                </button>
+              </form>
+              {manualTickerError && (
+                <div className="text-[10px] text-rose-400 -mt-1">{manualTickerError}</div>
+              )}
+
               <div className="flex-1 min-h-[150px] max-h-[300px] overflow-y-auto bg-ramp-grey-1000 border border-ramp-grey-850 rounded-xl p-3 scrollbar-thin scrollbar-thumb-ramp-grey-800 flex flex-col">
                 {!activeWatchlist || activeWatchlist.tickers.length === 0 ? (
                   <div className="flex-grow flex items-center justify-center text-center text-[10px] text-gray-500 p-4">
-                    Select stocks from the grid to build your list.
+                    Add a ticker or select stocks from the grid.
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1.5">

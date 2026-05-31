@@ -51,6 +51,17 @@ def upsert_stock(db: Session, symbol: str, name: str, sector: str = None, is_nif
     db.commit()
     return stock
 
+def ensure_stock(db: Session, symbol: str, name: str = None, sector: str = None, is_nifty500: bool = False) -> Stock:
+    """Ensure a stock row exists without overwriting existing synced metadata."""
+    stock = db.query(Stock).filter(Stock.symbol == symbol).first()
+    if stock:
+        return stock
+
+    stock = Stock(symbol=symbol, name=name or symbol, sector=sector, is_nifty500=is_nifty500)
+    db.add(stock)
+    db.commit()
+    return stock
+
 def get_all_stocks(db: Session) -> list[Stock]:
     """Retrieve all stock entries."""
     return db.query(Stock).all()

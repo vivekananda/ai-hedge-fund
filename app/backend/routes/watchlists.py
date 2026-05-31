@@ -7,7 +7,8 @@ from src.db.connection import SessionLocal
 from src.db.queries import (
     get_watchlists,
     create_or_update_watchlist,
-    delete_watchlist
+    delete_watchlist,
+    ensure_stock,
 )
 
 router = APIRouter(prefix="/watchlists")
@@ -31,6 +32,14 @@ class WatchlistResponse(BaseModel):
     name: str
     tickers: List[str]
     created_at: str
+
+
+def normalize_ticker(ticker: str) -> str:
+    """Normalize wishlist tickers to the NSE yfinance symbol style used by the app."""
+    clean = ticker.strip().upper()
+    if not clean:
+        return ""
+    return clean if "." in clean else f"{clean}.NS"
 
 
 @router.get("", response_model=List[WatchlistResponse])
@@ -66,11 +75,22 @@ def save_watchlist(request: WatchlistRequest, db: Session = Depends(get_db)):
     try:
         if not request.name.strip():
             raise HTTPException(status_code=400, detail="Watchlist name cannot be empty")
+
+        tickers = []
+        seen = set()
+        for ticker in request.tickers:
+            normalized = normalize_ticker(ticker)
+            if normalized and normalized not in seen:
+                tickers.append(normalized)
+                seen.add(normalized)
+
+        for ticker in tickers:
+            ensure_stock(db, symbol=ticker, name=ticker, is_nifty500=False)
         
         watchlist = create_or_update_watchlist(
             db=db,
             name=request.name.strip(),
-            tickers=[t.strip() for t in request.tickers if t.strip()]
+            tickers=tickers
         )
         return WatchlistResponse(
             id=watchlist.id,
