@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Calendar, Play, Loader2, Shield, AlertCircle, PlusCircle, MinusCircle, Plus, ListPlus, Trash2, Settings, X, Database, ExternalLink, FileImage, FileText } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -179,6 +179,8 @@ export function WeeklyPicksDashboard() {
   const [selectedWatchlist, setSelectedWatchlist] = useState<string>('Nifty 500');
   const [dates, setDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
+  const selectedWatchlistRef = useRef(selectedWatchlist);
+  const selectedDateRef = useRef(selectedDate);
   const [picks, setPicks] = useState<WeeklyPick[]>([]);
   const [selectedAnalysis, setSelectedAnalysis] = useState<WeeklyPick | null>(null);
   const [loadingPicks, setLoadingPicks] = useState(false);
@@ -190,42 +192,21 @@ export function WeeklyPicksDashboard() {
   const [isTriggering, setIsTriggering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Poll intervals
   useEffect(() => {
-    fetchDates(selectedWatchlist);
-    fetchRuns();
-    
-    // Set up polling for active runs
-    const interval = setInterval(() => {
-      fetchRuns();
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Fetch dates when selectedWatchlist changes
-  useEffect(() => {
-    fetchDates(selectedWatchlist);
+    selectedWatchlistRef.current = selectedWatchlist;
   }, [selectedWatchlist]);
 
-  // Fetch picks when selectedDate changes
   useEffect(() => {
-    if (selectedDate) {
-      fetchPicks(selectedDate, selectedWatchlist);
-    } else {
-      setPicks([]);
-    }
-  }, [selectedDate, selectedWatchlist]);
+    selectedDateRef.current = selectedDate;
+  }, [selectedDate]);
 
-  // If a run just completed and we don't have a date selected, refresh dates
-  const isRunning = activeRuns.some(r => r.status === 'RUNNING' || r.status === 'PENDING');
-  
-  const fetchDates = async (wlName: string = selectedWatchlist) => {
+  const fetchDates = useCallback(async (wlName: string = selectedWatchlistRef.current) => {
     try {
       const availableDates = await api.getWeeklyPicksDates(wlName);
       setDates(availableDates);
+      const currentSelectedDate = selectedDateRef.current;
       if (availableDates.length > 0) {
-        if (!selectedDate || !availableDates.includes(selectedDate)) {
+        if (!currentSelectedDate || !availableDates.includes(currentSelectedDate)) {
           setSelectedDate(availableDates[0]);
         }
       } else {
@@ -234,9 +215,9 @@ export function WeeklyPicksDashboard() {
     } catch (err) {
       console.error('Error fetching weekly pick dates:', err);
     }
-  };
+  }, []);
 
-  const fetchPicks = async (date: string, wlName: string = selectedWatchlist) => {
+  const fetchPicks = useCallback(async (date: string, wlName: string = selectedWatchlistRef.current) => {
     try {
       setLoadingPicks(true);
       const data = await api.getWeeklyPicks(date, wlName);
@@ -246,9 +227,9 @@ export function WeeklyPicksDashboard() {
     } finally {
       setLoadingPicks(false);
     }
-  };
+  }, []);
 
-  const fetchRuns = async () => {
+  const fetchRuns = useCallback(async () => {
     try {
       const runs = await api.getWeeklyRuns();
       setActiveRuns(runs);
@@ -256,15 +237,47 @@ export function WeeklyPicksDashboard() {
       // If there was a running job that completed, refresh dates
       const completedRun = runs.length > 0 && runs[0].status === 'COMPLETED';
       if (completedRun) {
-        fetchDates(selectedWatchlist);
+        fetchDates(selectedWatchlistRef.current);
       }
     } catch (err) {
       console.error('Error fetching runs:', err);
     }
-  };
+  }, [fetchDates]);
+
+  // Poll intervals
+  useEffect(() => {
+    fetchDates(selectedWatchlistRef.current);
+    fetchRuns();
+    
+    // Set up polling for active runs
+    const interval = setInterval(() => {
+      fetchRuns();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [fetchDates, fetchRuns]);
+
+  // Fetch dates when selectedWatchlist changes
+  useEffect(() => {
+    fetchDates(selectedWatchlist);
+  }, [fetchDates, selectedWatchlist]);
+
+  // Fetch picks when selectedDate changes
+  useEffect(() => {
+    if (selectedDate) {
+      fetchPicks(selectedDate, selectedWatchlist);
+    } else {
+      setPicks([]);
+    }
+  }, [fetchPicks, selectedDate, selectedWatchlist]);
+
+  // If a run just completed and we don't have a date selected, refresh dates
+  const isRunning = activeRuns.some(r => r.status === 'RUNNING' || r.status === 'PENDING');
 
   const openHistoricalRun = (run: WeeklyRun) => {
     const runWatchlist = run.watchlist_name || 'Nifty 500';
+    selectedWatchlistRef.current = runWatchlist;
+    selectedDateRef.current = run.run_date;
     setSelectedWatchlist(runWatchlist);
     setSelectedDate(run.run_date);
     fetchDates(runWatchlist);
