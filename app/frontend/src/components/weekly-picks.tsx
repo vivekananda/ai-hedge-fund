@@ -1385,129 +1385,153 @@ export function WeeklyPicksDashboard() {
                     </div>
                     
                     {/* Thesis & metrics */}
-                    <CardContent className="p-4 flex-1 flex flex-col justify-between">
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
-                        {/* Left Column: Metrics & Fundamentals (5 cols) */}
-                        <div className="md:col-span-5 flex flex-col justify-between gap-3 h-full">
-                          <div className="space-y-3">
-                            {/* Confidence & Risk */}
-                            <div className="grid grid-cols-2 gap-2 bg-ramp-grey-950/70 p-2.5 rounded-lg border border-ramp-grey-800/60 text-xs shadow-inner">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Confidence</span>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  <span className="font-bold text-gray-200 text-xs leading-none">{pick.score}%</span>
-                                  <div className="w-10 bg-gray-800 rounded-full h-1 overflow-hidden">
-                                    <div 
-                                      className="bg-gradient-to-r from-cyan-400 to-indigo-500 h-1 rounded-full" 
-                                      style={{ width: `${pick.score}%` }}
-                                    />
+                    <CardContent className="p-4 flex-1 flex flex-col justify-between gap-4">
+                      {/* Horizontal stats grid */}
+                      {(() => {
+                        const stockDetail = stocks.find(s => s.symbol === pick.symbol);
+                        const isGain = (pick.price_change_pct || 0) >= 0;
+                        const riskLabel = pick.risk_score <= 3 ? 'Low' : pick.risk_score <= 6 ? 'Med' : 'High';
+                        const riskColor = pick.risk_score <= 3 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
+                                           pick.risk_score <= 6 ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' :
+                                           'text-rose-400 bg-rose-500/10 border-rose-500/20';
+
+                        return (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
+                            {/* Panel 1: Price Action */}
+                            <div className="bg-ramp-grey-950/60 hover:bg-ramp-grey-950/80 border border-ramp-grey-800/40 p-3 rounded-lg flex flex-col justify-between shadow-inner hover:border-cyan-500/20 transition-all duration-300">
+                              <div className="flex flex-col gap-1.5">
+                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Price Performance</span>
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-500">Analysis</span>
+                                    <span className="font-bold text-gray-200">{formatPrice(pick.analysis_price)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-500">Current</span>
+                                    <span className="font-bold text-gray-200">{formatPrice(pick.current_price)}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div className="flex flex-col gap-0.5 border-l border-ramp-grey-800/40 pl-2.5">
-                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Risk Rating</span>
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <span className="font-bold text-gray-200 text-xs leading-none">{pick.risk_score}/10</span>
-                                  <span className="text-[9px] text-gray-400 font-medium">
-                                    {pick.risk_score <= 3 ? '(Low)' : pick.risk_score <= 6 ? '(Med)' : '(High)'}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2 bg-ramp-grey-950/70 p-2.5 rounded-lg border border-ramp-grey-800/60 text-xs shadow-inner">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Analysis Price</span>
-                                <span className="font-bold text-gray-200 text-xs leading-none mt-0.5">{formatPrice(pick.analysis_price)}</span>
-                                <span className="text-[9px] text-gray-500">{pick.analysis_date || '—'}</span>
-                              </div>
-                              <div className="flex flex-col gap-0.5 border-l border-ramp-grey-800/40 pl-2.5">
-                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Current Move</span>
-                                <span className={`font-bold text-xs leading-none mt-0.5 ${(pick.price_change_pct || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {formatPercent(pick.price_change_pct)}
+                              <div className="mt-2 pt-1.5 border-t border-ramp-grey-800/40 flex items-center justify-between">
+                                <span className="text-[9px] text-gray-500">Return</span>
+                                <span className={`text-[11px] font-bold flex items-center gap-0.5 ${isGain ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {isGain ? '▲' : '▼'} {formatPercent(pick.price_change_pct)}
                                 </span>
-                                <span className="text-[9px] text-gray-500">{formatPrice(pick.current_price)} · {pick.current_date || '—'}</span>
                               </div>
                             </div>
 
-                            {/* Fundamental Ratios Grid */}
-                            {(() => {
-                              const stockDetail = stocks.find(s => s.symbol === pick.symbol);
-                              if (!stockDetail) return (
-                                <div className="text-[10px] text-gray-500 italic p-4 text-center bg-ramp-grey-950/20 border border-ramp-grey-800/40 rounded-lg">
-                                  No fundamental ratios cached.
-                                </div>
-                              );
-                              return (
-                                <div className="grid grid-cols-2 gap-2 text-[10px] text-gray-400">
-                                  <div className="bg-ramp-grey-950/60 border border-ramp-grey-800/40 rounded-lg p-2 flex flex-col justify-between">
-                                    <span className="text-[9px] text-gray-500 uppercase font-semibold">Market Cap</span>
-                                    <span className="font-bold text-gray-200 mt-1">
-                                      {formatMarketCap(stockDetail.fundamentals?.market_cap)}
-                                    </span>
-                                  </div>
-                                  <div className="bg-ramp-grey-950/60 border border-ramp-grey-800/40 rounded-lg p-2 flex flex-col justify-between">
-                                    <span className="text-[9px] text-gray-500 uppercase font-semibold">1Y Return</span>
-                                    <span className={`font-bold mt-1 ${stockDetail.performance_1y && stockDetail.performance_1y >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                      {formatPercent(stockDetail.performance_1y)}
-                                    </span>
-                                  </div>
-                                  <div className="bg-ramp-grey-950/60 border border-ramp-grey-800/40 rounded-lg p-2 flex flex-col justify-between">
-                                    <span className="text-[9px] text-gray-500 uppercase font-semibold">P/E Ratio</span>
-                                    <span className="font-bold text-gray-200 mt-1">
-                                      {stockDetail.fundamentals?.pe_ratio ? stockDetail.fundamentals.pe_ratio.toFixed(1) : '—'}
-                                    </span>
-                                  </div>
-                                  <div className="bg-ramp-grey-950/60 border border-ramp-grey-800/40 rounded-lg p-2 flex flex-col justify-between">
-                                    <span className="text-[9px] text-gray-500 uppercase font-semibold">ROE %</span>
-                                    <span className="font-bold text-gray-200 mt-1">
-                                      {stockDetail.fundamentals?.roe ? `${stockDetail.fundamentals.roe.toFixed(1)}%` : '—'}
-                                    </span>
+                            {/* Panel 2: Conviction & Risk */}
+                            <div className="bg-ramp-grey-950/60 hover:bg-ramp-grey-950/80 border border-ramp-grey-800/40 p-3 rounded-lg flex flex-col justify-between shadow-inner hover:border-cyan-500/20 transition-all duration-300">
+                              <div className="flex flex-col gap-1.5">
+                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Conviction & Risk</span>
+                                <div className="space-y-1.5">
+                                  <div>
+                                    <div className="flex justify-between text-xs mb-1">
+                                      <span className="text-gray-500">Conviction</span>
+                                      <span className="font-bold text-gray-200">{pick.score}%</span>
+                                    </div>
+                                    <div className="w-full bg-gray-800/50 rounded-full h-1 overflow-hidden">
+                                      <div 
+                                        className="bg-gradient-to-r from-cyan-400 to-indigo-500 h-1 rounded-full" 
+                                        style={{ width: `${pick.score}%` }}
+                                      />
+                                    </div>
                                   </div>
                                 </div>
-                              );
-                            })()}
+                              </div>
+                              <div className="mt-2 pt-1.5 border-t border-ramp-grey-800/40 flex items-center justify-between">
+                                <span className="text-[9px] text-gray-500">Risk Rating</span>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${riskColor}`}>
+                                  {pick.risk_score}/10 ({riskLabel})
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Panel 3: Financial Ratios */}
+                            <div className="bg-ramp-grey-950/60 hover:bg-ramp-grey-950/80 border border-ramp-grey-800/40 p-3 rounded-lg flex flex-col justify-between shadow-inner hover:border-cyan-500/20 transition-all duration-300">
+                              <div className="flex flex-col gap-1.5">
+                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Key Ratios</span>
+                                {stockDetail ? (
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-gray-500">P/E Ratio</span>
+                                      <span className="font-bold text-gray-200">
+                                        {stockDetail.fundamentals?.pe_ratio ? stockDetail.fundamentals.pe_ratio.toFixed(1) : '—'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-gray-500">ROE</span>
+                                      <span className="font-bold text-gray-200">
+                                        {stockDetail.fundamentals?.roe ? `${stockDetail.fundamentals.roe.toFixed(1)}%` : '—'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-gray-500 italic">No ratios cached</span>
+                                )}
+                              </div>
+                              <div className="mt-2 pt-1.5 border-t border-ramp-grey-800/40 flex items-center justify-between">
+                                <span className="text-[9px] text-gray-500">1Y Return</span>
+                                <span className={`text-[11px] font-bold ${stockDetail && stockDetail.performance_1y && stockDetail.performance_1y >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {stockDetail ? formatPercent(stockDetail.performance_1y) : '—'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Panel 4: Company Profile */}
+                            <div className="bg-ramp-grey-950/60 hover:bg-ramp-grey-950/80 border border-ramp-grey-800/40 p-3 rounded-lg flex flex-col justify-between shadow-inner hover:border-cyan-500/20 transition-all duration-300">
+                              <div className="flex flex-col gap-1.5 min-w-0">
+                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Company Profile</span>
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex justify-between text-xs min-w-0 gap-2">
+                                    <span className="text-gray-500 shrink-0">Market Cap</span>
+                                    <span className="font-bold text-gray-200 truncate">
+                                      {stockDetail ? formatMarketCap(stockDetail.fundamentals?.market_cap) : '—'}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-xs min-w-0 gap-2">
+                                    <span className="text-gray-500 shrink-0">Sector</span>
+                                    <span className="font-bold text-gray-200 truncate" title={stockDetail?.sector || '—'}>
+                                      {stockDetail?.sector || '—'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-2 pt-1.5 border-t border-ramp-grey-800/40 flex items-center justify-between text-[9px] text-gray-500">
+                                <span>Risk Profile</span>
+                                <span className="text-gray-300 capitalize">{pick.risk_score <= 3 ? 'Conservative' : pick.risk_score <= 6 ? 'Balanced' : 'Aggressive'}</span>
+                              </div>
+                            </div>
                           </div>
+                        );
+                      })()}
 
-                          {/* Sector at the bottom of left column */}
-                          {(() => {
-                            const stockDetail = stocks.find(s => s.symbol === pick.symbol);
-                            if (!stockDetail || !stockDetail.sector) return null;
-                            return (
-                              <div className="text-[10px] text-gray-500 mt-auto border-t border-ramp-grey-800/40 pt-2 flex items-center justify-between">
-                                <span>Sector</span>
-                                <span className="font-semibold text-gray-300 truncate max-w-[125px]" title={stockDetail.sector}>
-                                  {stockDetail.sector}
-                                </span>
-                              </div>
-                            );
-                          })()}
-                        </div>
-
-                        {/* Right Column: Qualitative Thesis (7 cols) */}
-                        <div className="md:col-span-7 flex flex-col h-full justify-between gap-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="inline-flex items-center gap-1.5 text-[9px] text-cyan-300 uppercase tracking-wider font-bold">
-                              <Sparkles className="h-3 w-3" />
+                      {/* Decision Summary - 100% Width */}
+                      <div className="w-full flex flex-col gap-3">
+                        <div className="rounded-lg bg-gradient-to-br from-cyan-500/[0.04] via-ramp-grey-950/80 to-ramp-grey-950/90 p-4 border border-cyan-500/10 shadow-lg">
+                          <div className="flex items-center justify-between gap-2 mb-3">
+                            <span className="inline-flex items-center gap-1.5 text-[10px] text-cyan-300 uppercase tracking-wider font-bold">
+                              <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
                               Decision Summary
                             </span>
                             <span className="text-[9px] text-gray-500">
-                              {pick.risk_score <= 3 ? 'Low risk' : pick.risk_score <= 6 ? 'Medium risk' : 'High risk'}
+                              Based on technical & qualitative indicators
                             </span>
                           </div>
-                          <div className="flex-1 min-h-[156px] max-h-[196px] overflow-y-auto bg-gradient-to-b from-cyan-500/[0.07] to-ramp-grey-950 p-3 rounded-lg border border-cyan-500/20 scrollbar-thin scrollbar-thumb-ramp-grey-800">
-                            {renderDecisionSummary(pick, true)}
+                          <div className="min-h-[120px] max-h-[180px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-ramp-grey-800">
+                            {renderDecisionSummary(pick, false)}
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 justify-start bg-ramp-grey-950 border-ramp-grey-800 hover:border-cyan-500/40 hover:bg-ramp-grey-800 text-cyan-300 text-xs"
-                            onClick={() => setSelectedAnalysis(pick)}
-                          >
-                            <ExternalLink className="h-3.5 w-3.5 mr-2" />
-                            Open complete analysis
-                          </Button>
                         </div>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full h-9 justify-center bg-ramp-grey-950 border-ramp-grey-800 hover:border-cyan-500/40 hover:bg-ramp-grey-800 hover:text-cyan-300 text-cyan-400/90 text-xs transition-all duration-200"
+                          onClick={() => setSelectedAnalysis(pick)}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                          Open complete analysis
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
