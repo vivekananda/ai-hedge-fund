@@ -46,6 +46,13 @@ const LLM_API_KEYS: ApiKey[] = [
     placeholder: 'your-groq-api-key'
   },
   {
+    key: 'XAI_API_KEY',
+    label: 'xAI (Grok) API',
+    description: 'For Grok models (grok-4.3, etc.)',
+    url: 'https://x.ai/api',
+    placeholder: 'your-xai-api-key'
+  },
+  {
     key: 'GOOGLE_API_KEY',
     label: 'Google API',
     description: 'For Gemini models (gemini-2.5-flash, gemini-2.5-pro)',

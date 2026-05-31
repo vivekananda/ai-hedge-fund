@@ -223,7 +223,8 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
         base_url = os.getenv("MOONSHOT_BASE_URL") or os.getenv("KIMI_BASE_URL") or "https://api.moonshot.ai/v1"
         return ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url)
     elif model_provider == ModelProvider.XAI:
-        api_key = (api_keys or {}).get("XAI_API_KEY") or os.getenv("XAI_API_KEY")
+        api_key = (api_keys or {}).get("XAI_API_KEY") or os.getenv("XAI_API_KEY") \
+            or (api_keys or {}).get("GROK_API_KEY") or os.getenv("GROK_API_KEY")
         if not api_key:
             print(f"API Key Error: Please make sure XAI_API_KEY is set in your .env file or provided via API keys.")
             raise ValueError("xAI API key not found. Please make sure XAI_API_KEY is set in your .env file or provided via API keys.")

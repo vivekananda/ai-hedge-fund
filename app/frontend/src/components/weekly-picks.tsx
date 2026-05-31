@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Calendar, Play, Loader2, Shield, AlertCircle, PlusCircle, MinusCircle, Plus, ListPlus, Trash2, Settings, X, Database, ExternalLink } from 'lucide-react';
+import { Calendar, Play, Loader2, Shield, AlertCircle, PlusCircle, MinusCircle, Plus, ListPlus, Trash2, Settings, X, Database, ExternalLink, FileImage, FileText } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -163,6 +163,7 @@ export function WeeklyPicksDashboard() {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [picks, setPicks] = useState<WeeklyPick[]>([]);
   const [loadingPicks, setLoadingPicks] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<'png' | 'pdf' | null>(null);
   const [activeRuns, setActiveRuns] = useState<WeeklyRun[]>([]);
   
   // Controls
@@ -270,6 +271,255 @@ export function WeeklyPicksDashboard() {
       month: 'long',
       year: 'numeric',
     });
+  };
+
+  const getExportFileBase = () => {
+    const datePart = selectedDate || new Date().toISOString().slice(0, 10);
+    const watchlistPart = selectedWatchlist.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    return `top-10-picks-${watchlistPart}-${datePart}`;
+  };
+
+  const getPlainText = (html: string) => {
+    const node = document.createElement('div');
+    node.innerHTML = html;
+    return (node.textContent || node.innerText || '').replace(/\s+/g, ' ').trim();
+  };
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const wrapCanvasText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let line = '';
+
+    words.forEach((word) => {
+      const nextLine = line ? `${line} ${word}` : word;
+      if (ctx.measureText(nextLine).width <= maxWidth) {
+        line = nextLine;
+      } else {
+        if (line) lines.push(line);
+        line = word;
+      }
+    });
+
+    if (line) lines.push(line);
+    return lines;
+  };
+
+  const handleExportPng = async () => {
+    if (!picks.length || exportingFormat) return;
+
+    try {
+      setExportingFormat('png');
+      const width = 1600;
+      const padding = 64;
+      const cardGap = 24;
+      const cardHeight = 220;
+      const headerHeight = 180;
+      const footerHeight = 56;
+      const height = headerHeight + picks.length * (cardHeight + cardGap) + footerHeight;
+      const scale = window.devicePixelRatio || 1;
+      const canvas = document.createElement('canvas');
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas is unavailable in this browser');
+
+      ctx.scale(scale, scale);
+      ctx.fillStyle = '#0b0f17';
+      ctx.fillRect(0, 0, width, height);
+
+      const gradient = ctx.createLinearGradient(0, 0, width, headerHeight);
+      gradient.addColorStop(0, '#06b6d4');
+      gradient.addColorStop(1, '#4f46e5');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, 10);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 44px Inter, Arial, sans-serif';
+      ctx.fillText('Top 10 Picks', padding, 78);
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '500 24px Inter, Arial, sans-serif';
+      ctx.fillText(`${selectedWatchlist} • Week of ${selectedDate ? formatDate(selectedDate) : 'Latest analysis'}`, padding, 118);
+      ctx.font = '400 18px Inter, Arial, sans-serif';
+      ctx.fillText(`Exported ${new Date().toLocaleString('en-IN')}`, padding, 150);
+
+      picks.forEach((pick, index) => {
+        const y = headerHeight + index * (cardHeight + cardGap);
+        const x = padding;
+        const cardWidth = width - padding * 2;
+        const isBuy = pick.signal.toLowerCase() === 'buy';
+        const thesis = getPlainText(pick.thesis);
+
+        ctx.fillStyle = '#111827';
+        ctx.strokeStyle = '#263244';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(x, y, cardWidth, cardHeight, 16);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = pick.rank <= 3 ? '#f59e0b' : '#06b6d4';
+        ctx.beginPath();
+        ctx.arc(x + 48, y + 50, 28, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 26px Inter, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(pick.rank), x + 48, y + 59);
+        ctx.textAlign = 'left';
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 28px Inter, Arial, sans-serif';
+        ctx.fillText(pick.symbol.replace('.NS', ''), x + 92, y + 44);
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '500 18px Inter, Arial, sans-serif';
+        ctx.fillText(pick.name.slice(0, 76), x + 92, y + 74);
+
+        ctx.fillStyle = isBuy ? '#10b981' : '#f59e0b';
+        ctx.font = '700 18px Inter, Arial, sans-serif';
+        ctx.fillText(pick.signal.toUpperCase(), x + cardWidth - 310, y + 44);
+        ctx.fillStyle = '#67e8f9';
+        ctx.fillText(`${pick.score}% conviction`, x + cardWidth - 310, y + 76);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText(`Risk ${pick.risk_score}/10`, x + cardWidth - 310, y + 108);
+
+        ctx.fillStyle = '#d1d5db';
+        ctx.font = '400 19px Inter, Arial, sans-serif';
+        const lines = wrapCanvasText(ctx, thesis, cardWidth - 130).slice(0, 4);
+        lines.forEach((line, lineIndex) => {
+          ctx.fillText(line, x + 92, y + 124 + lineIndex * 25);
+        });
+      });
+
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '400 16px Inter, Arial, sans-serif';
+      ctx.fillText('Generated by AI Hedge Fund weekly picks dashboard', padding, height - 28);
+
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('Unable to create PNG export');
+      downloadBlob(blob, `${getExportFileBase()}.png`);
+    } catch (err: any) {
+      setError(err.message || 'Failed to export PNG');
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
+  const escapePdfText = (text: string) => (
+    text
+      .normalize('NFKD')
+      .replace(/[^\x20-\x7E]/g, '')
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)')
+  );
+
+  const wrapPdfText = (text: string, maxChars: number) => {
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let line = '';
+    words.forEach((word) => {
+      const nextLine = line ? `${line} ${word}` : word;
+      if (nextLine.length <= maxChars) {
+        line = nextLine;
+      } else {
+        if (line) lines.push(line);
+        line = word;
+      }
+    });
+    if (line) lines.push(line);
+    return lines;
+  };
+
+  const buildPdf = (lines: string[]) => {
+    const pageWidth = 612;
+    const pageHeight = 792;
+    const margin = 48;
+    const lineHeight = 14;
+    const maxLinesPerPage = Math.floor((pageHeight - margin * 2) / lineHeight);
+    const pages: string[][] = [];
+
+    for (let i = 0; i < lines.length; i += maxLinesPerPage) {
+      pages.push(lines.slice(i, i + maxLinesPerPage));
+    }
+
+    const objects: string[] = [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      `<< /Type /Pages /Kids [${pages.map((_, i) => `${3 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`,
+    ];
+
+    pages.forEach((pageLines, index) => {
+      const pageObjectNumber = 3 + index * 2;
+      const contentObjectNumber = pageObjectNumber + 1;
+      objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >> /Contents ${contentObjectNumber} 0 R >>`);
+      const contentLines = [
+        'BT',
+        '/F2 20 Tf',
+        `${margin} ${pageHeight - margin} Td`,
+        index === 0 ? `(Top 10 Picks) Tj` : `(Top 10 Picks continued) Tj`,
+        '/F1 10 Tf',
+        `0 -${lineHeight * 1.6} Td`,
+        ...pageLines.map((line) => `(${escapePdfText(line)}) Tj 0 -${lineHeight} Td`),
+        'ET',
+      ];
+      const stream = contentLines.join('\n');
+      objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    });
+
+    const chunks = ['%PDF-1.4\n'];
+    const offsets: number[] = [0];
+    objects.forEach((object, index) => {
+      offsets.push(chunks.join('').length);
+      chunks.push(`${index + 1} 0 obj\n${object}\nendobj\n`);
+    });
+    const xrefOffset = chunks.join('').length;
+    chunks.push(`xref\n0 ${objects.length + 1}\n`);
+    chunks.push('0000000000 65535 f \n');
+    offsets.slice(1).forEach((offset) => {
+      chunks.push(`${String(offset).padStart(10, '0')} 00000 n \n`);
+    });
+    chunks.push(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+    return new Blob(chunks, { type: 'application/pdf' });
+  };
+
+  const handleExportPdf = () => {
+    if (!picks.length || exportingFormat) return;
+
+    try {
+      setExportingFormat('pdf');
+      const lines = [
+        `${selectedWatchlist} - Week of ${selectedDate ? formatDate(selectedDate) : 'Latest analysis'}`,
+        `Exported ${new Date().toLocaleString('en-IN')}`,
+        '',
+        ...picks.flatMap((pick) => {
+          const thesis = getPlainText(pick.thesis);
+          return [
+            `#${pick.rank} ${pick.symbol.replace('.NS', '')} - ${pick.name}`,
+            `Signal: ${pick.signal.toUpperCase()} | Conviction: ${pick.score}% | Risk: ${pick.risk_score}/10`,
+            ...wrapPdfText(`Thesis: ${thesis}`, 95).slice(0, 8),
+            '',
+          ];
+        }),
+      ];
+
+      downloadBlob(buildPdf(lines), `${getExportFileBase()}.pdf`);
+    } catch (err: any) {
+      setError(err.message || 'Failed to export PDF');
+    } finally {
+      setExportingFormat(null);
+    }
   };
 
   // Status message helper
@@ -508,12 +758,41 @@ export function WeeklyPicksDashboard() {
         
         {/* Left Side: Top 10 Picks List */}
         <div className="flex-grow flex-1 w-full space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              <Shield className="h-5 w-5 text-cyan-400" />
-              Top 10 Picks ({selectedWatchlist}) for Week of {selectedDate ? formatDate(selectedDate) : '...'}
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <h2 className="min-w-0 text-white flex items-start gap-2">
+              <Shield className="h-5 w-5 text-cyan-400 mt-0.5 flex-shrink-0" />
+              <span className="min-w-0 flex flex-col">
+                <span className="text-xl font-bold tracking-tight leading-tight">Top 10 Picks</span>
+                <span className="text-xs font-medium text-gray-400 leading-snug">
+                  {selectedWatchlist} • Week of {selectedDate ? formatDate(selectedDate) : '...'}
+                </span>
+              </span>
             </h2>
-            {loadingPicks && <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />}
+            <div className="flex items-center gap-2">
+              {loadingPicks && <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />}
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-ramp-grey-950 border-ramp-grey-800 hover:bg-ramp-grey-800 text-cyan-300"
+                disabled={loadingPicks || picks.length === 0 || exportingFormat !== null}
+                onClick={handleExportPng}
+                title="Export Top 10 Picks as PNG"
+              >
+                {exportingFormat === 'png' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileImage className="h-4 w-4 mr-2" />}
+                PNG
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-ramp-grey-950 border-ramp-grey-800 hover:bg-ramp-grey-800 text-indigo-300"
+                disabled={loadingPicks || picks.length === 0 || exportingFormat !== null}
+                onClick={handleExportPdf}
+                title="Export Top 10 Picks as PDF"
+              >
+                {exportingFormat === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileText className="h-4 w-4 mr-2" />}
+                PDF
+              </Button>
+            </div>
           </div>
 
           {loadingPicks ? (

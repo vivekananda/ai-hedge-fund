@@ -6,6 +6,17 @@ from datetime import datetime
 from app.backend.database.models import ApiKey
 
 
+API_KEY_PROVIDER_ALIASES = {
+    "GROK_API_KEY": "XAI_API_KEY",
+}
+
+
+def normalize_api_key_provider(provider: str) -> str:
+    """Normalize provider aliases to the canonical environment variable name."""
+    normalized_provider = provider.strip().upper()
+    return API_KEY_PROVIDER_ALIASES.get(normalized_provider, normalized_provider)
+
+
 class ApiKeyRepository:
     """Repository for API key database operations"""
     
@@ -20,6 +31,8 @@ class ApiKeyRepository:
         is_active: bool = True
     ) -> ApiKey:
         """Create a new API key or update existing one"""
+        provider = normalize_api_key_provider(provider)
+
         # Check if API key already exists for this provider
         existing_key = self.db.query(ApiKey).filter(ApiKey.provider == provider).first()
         
@@ -47,6 +60,7 @@ class ApiKeyRepository:
 
     def get_api_key_by_provider(self, provider: str) -> Optional[ApiKey]:
         """Get API key by provider name"""
+        provider = normalize_api_key_provider(provider)
         return self.db.query(ApiKey).filter(
             ApiKey.provider == provider,
             ApiKey.is_active == True
@@ -67,6 +81,7 @@ class ApiKeyRepository:
         is_active: bool = None
     ) -> Optional[ApiKey]:
         """Update an existing API key"""
+        provider = normalize_api_key_provider(provider)
         api_key = self.db.query(ApiKey).filter(ApiKey.provider == provider).first()
         if not api_key:
             return None
@@ -85,6 +100,7 @@ class ApiKeyRepository:
 
     def delete_api_key(self, provider: str) -> bool:
         """Delete an API key by provider"""
+        provider = normalize_api_key_provider(provider)
         api_key = self.db.query(ApiKey).filter(ApiKey.provider == provider).first()
         if not api_key:
             return False
@@ -95,6 +111,7 @@ class ApiKeyRepository:
 
     def deactivate_api_key(self, provider: str) -> bool:
         """Deactivate an API key instead of deleting it"""
+        provider = normalize_api_key_provider(provider)
         api_key = self.db.query(ApiKey).filter(ApiKey.provider == provider).first()
         if not api_key:
             return False
@@ -106,6 +123,7 @@ class ApiKeyRepository:
 
     def update_last_used(self, provider: str) -> bool:
         """Update the last_used timestamp for an API key"""
+        provider = normalize_api_key_provider(provider)
         api_key = self.db.query(ApiKey).filter(
             ApiKey.provider == provider,
             ApiKey.is_active == True

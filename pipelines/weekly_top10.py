@@ -1,15 +1,227 @@
-import os
 import datetime
 import argparse
+import json
+import html
 from tabulate import tabulate
 from sqlalchemy.orm import Session
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel, Field
 
 from src.db.connection import SessionLocal
-from src.db.queries import init_db, get_all_stocks, save_weekly_pick, get_weekly_picks
+from src.db.queries import init_db, get_all_stocks, save_weekly_pick, delete_weekly_picks
 from src.data.universe import sync_nifty500_universe
 from src.tools.api import get_price_data, get_prices
 from src.agents.technicals import calculate_sma, calculate_rsi
 from src.main import run_hedge_fund
+from src.utils.llm import call_llm
+
+
+class WeeklyPickReview(BaseModel):
+    thesis: str = Field(description="Plain text qualitative thesis for the weekly pick")
+    risk_score: float = Field(description="Risk score from 1.0 low risk to 10.0 high risk")
+
+
+class WeeklyPickReviews(BaseModel):
+    reviews: dict[str, WeeklyPickReview] = Field(description="Ticker symbol to weekly pick review")
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _format_pct(value) -> str:
+    return f"{_safe_float(value):.1f}%"
+
+
+def _candidate_metrics_text(candidate: dict | None) -> str:
+    if not candidate:
+        return "screen metrics unavailable"
+
+    trend = "above" if candidate.get("price_above_44") else "below"
+    return (
+        f"screen score {candidate.get('score', 0)}/5, "
+        f"ROE {_format_pct(candidate.get('roe'))}, "
+        f"ROCE {_format_pct(candidate.get('roce'))}, "
+        f"D/E {_safe_float(candidate.get('debt_to_equity'), 0.0):.2f}, "
+        f"sales growth {_format_pct(candidate.get('sales_growth'))}, "
+        f"price {trend} 44-SMA, RSI {_safe_float(candidate.get('rsi'), 50.0):.1f}"
+    )
+
+
+def _compact_signal_summary(symbol: str, analyst_signals: dict) -> list[str]:
+    summary = []
+    for agent_name, signals in (analyst_signals or {}).items():
+        if agent_name == "risk_management_agent":
+            continue
+
+        signal = (signals or {}).get(symbol)
+        if not signal:
+            continue
+
+        label = agent_name.replace("_agent", "").replace("_", " ")
+        summary.append(
+            f"{label}: {signal.get('signal', 'n/a')} "
+            f"({_safe_float(signal.get('confidence'), 0.0):.0f}% confidence)"
+        )
+
+    return summary
+
+
+def _fallback_risk_score(symbol: str, candidate: dict | None, analyst_signals: dict) -> float:
+    risk_signal = (analyst_signals or {}).get("risk_management_agent", {}).get(symbol, {})
+    volatility = (
+        risk_signal.get("volatility_metrics", {}).get("annualized_volatility")
+        if risk_signal
+        else None
+    )
+
+    if volatility is not None:
+        score = max(1.0, min(10.0, _safe_float(volatility) * 20.0))
+    else:
+        score = 5.0
+
+    if candidate:
+        if _safe_float(candidate.get("debt_to_equity"), 0.0) > 1.0:
+            score += 1.0
+        if not candidate.get("price_above_44"):
+            score += 0.75
+
+        rsi = _safe_float(candidate.get("rsi"), 50.0)
+        if rsi > 70 or rsi < 30:
+            score += 0.75
+
+    signals = []
+    for agent_signals in (analyst_signals or {}).values():
+        payload = (agent_signals or {}).get(symbol)
+        if payload and payload.get("signal") in {"bullish", "bearish"}:
+            signals.append(payload["signal"])
+    if "bullish" in signals and "bearish" in signals:
+        score += 0.5
+
+    return round(max(1.0, min(10.0, score)), 1)
+
+
+def _fallback_thesis(symbol: str, decision: dict, candidate: dict | None, analyst_signals: dict) -> str:
+    signal_summary = _compact_signal_summary(symbol, analyst_signals)
+    analyst_text = "; ".join(signal_summary) if signal_summary else "analyst signals were limited"
+    reasoning = decision.get("reasoning") or "portfolio manager did not add a separate note"
+    action = str(decision.get("action", "hold")).upper()
+    confidence = _safe_float(decision.get("confidence"), 0.0)
+
+    return (
+        f"{action} with {confidence:.0f}% confidence. "
+        f"The screen shows {_candidate_metrics_text(candidate)}. "
+        f"Agent view: {analyst_text}. "
+        f"Portfolio note: {reasoning}."
+    )
+
+
+def _generate_weekly_pick_reviews(
+    picks: list[dict],
+    candidate_lookup: dict[str, dict],
+    analyst_signals: dict,
+    model_name: str,
+    model_provider: str,
+) -> dict[str, WeeklyPickReview]:
+    fallback_reviews = {
+        pick["symbol"]: WeeklyPickReview(
+            thesis=_fallback_thesis(
+                pick["symbol"],
+                pick,
+                candidate_lookup.get(pick["symbol"]),
+                analyst_signals,
+            ),
+            risk_score=_fallback_risk_score(
+                pick["symbol"],
+                candidate_lookup.get(pick["symbol"]),
+                analyst_signals,
+            ),
+        )
+        for pick in picks
+    }
+
+    if not picks:
+        return fallback_reviews
+
+    payload = {}
+    for pick in picks:
+        symbol = pick["symbol"]
+        payload[symbol] = {
+            "portfolio_decision": {
+                "action": pick.get("action"),
+                "confidence": pick.get("confidence"),
+                "reasoning": pick.get("reasoning"),
+            },
+            "screen_metrics": candidate_lookup.get(symbol, {}),
+            "analyst_summary": _compact_signal_summary(symbol, analyst_signals),
+            "fallback_risk_score": fallback_reviews[symbol].risk_score,
+        }
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "You write weekly stock-pick reviews for an Indian equity dashboard. "
+                "Use only the supplied metrics and agent summaries. "
+                "Return JSON only. Each thesis must be plain text, balanced, and under 65 words. "
+                "Risk score is 1.0 low risk to 10.0 high risk.",
+            ),
+            (
+                "human",
+                "Create a review for each ticker.\n\n"
+                "Input:\n{payload}\n\n"
+                "Format:\n"
+                "{{\"reviews\":{{\"TICKER\":{{\"thesis\":\"...\",\"risk_score\":5.0}}}}}}",
+            ),
+        ]
+    ).invoke({"payload": json.dumps(payload, default=str)})
+
+    state = {
+        "metadata": {
+            "model_name": model_name,
+            "model_provider": model_provider,
+        }
+    }
+
+    try:
+        llm_reviews = call_llm(
+            prompt=prompt,
+            pydantic_model=WeeklyPickReviews,
+            agent_name="weekly_thesis_agent",
+            state=state,
+            max_retries=2,
+            default_factory=lambda: WeeklyPickReviews(reviews=fallback_reviews),
+        )
+    except Exception as exc:
+        print(f"Weekly thesis generation failed; using fallback reviews: {exc}")
+        return fallback_reviews
+
+    reviews = dict(fallback_reviews)
+    for symbol, review in llm_reviews.reviews.items():
+        if symbol not in reviews:
+            continue
+
+        thesis = (review.thesis or "").strip()
+        risk_score = max(1.0, min(10.0, _safe_float(review.risk_score, reviews[symbol].risk_score)))
+        if thesis:
+            reviews[symbol] = WeeklyPickReview(
+                thesis=thesis,
+                risk_score=round(risk_score, 1),
+            )
+
+    for symbol, review in reviews.items():
+        reviews[symbol] = WeeklyPickReview(
+            thesis=html.escape(review.thesis),
+            risk_score=review.risk_score,
+        )
+
+    return reviews
+
 
 def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: str = "Gemini", test_mode: bool = False, watchlist_name: str = "Nifty 500"):
     """
@@ -119,6 +331,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
         # Batch tickers to avoid hitting API limit and keep LLM context clean
         batch_size = 5
         all_decisions = {}
+        all_analyst_signals = {}
         
         # Setup mock portfolio for the agents to analyze
         mock_portfolio = {
@@ -156,6 +369,8 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                 
                 if result and result.get("decisions"):
                     all_decisions.update(result["decisions"])
+                    for agent_name, signals in (result.get("analyst_signals") or {}).items():
+                        all_analyst_signals.setdefault(agent_name, {}).update(signals or {})
             except Exception as e:
                 print(f"Error running agents for batch {batch}: {e}")
                 
@@ -190,6 +405,20 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
         ranked_picks.sort(key=lambda x: (-x["action_rank"], -x["confidence"], x["risk_score"]))
         
         final_top_10 = ranked_picks[:10]
+
+        candidate_lookup = {candidate["symbol"]: candidate for candidate in top_candidates}
+        qualitative_reviews = _generate_weekly_pick_reviews(
+            picks=final_top_10,
+            candidate_lookup=candidate_lookup,
+            analyst_signals=all_analyst_signals,
+            model_name=model_name,
+            model_provider=model_provider,
+        )
+        for pick in final_top_10:
+            review = qualitative_reviews.get(pick["symbol"])
+            if review:
+                pick["thesis"] = review.thesis
+                pick["risk_score"] = review.risk_score
         
         # 5. Output finalized picks & save to database
         week_start_date = datetime.date.today().strftime("%Y-%m-%d")
@@ -197,6 +426,10 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
         print("\n" + "="*80)
         print(f"                WEEKLY TOP 10 INDIAN STOCK PICKS - {week_start_date}")
         print("="*80)
+
+        # Replace the cached list for this date/watchlist so symbols that dropped out
+        # of the top 10 do not remain visible from a previous run.
+        delete_weekly_picks(db, week_start_date, watchlist_name=watchlist_name)
         
         table_data = []
         for rank_idx, pick in enumerate(final_top_10):

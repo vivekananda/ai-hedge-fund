@@ -14,3 +14,20 @@
 | 8 | COALINDIA.NS | HOLD | 95.0% | 1.0/10 | • Maximized position size based on initial strong BUY signal.<br>• Maintaining discipline by avoiding duplicate entries.<br>• Monitoring performance of current long holding. |
 | 9 | EICHERMOT.NS | HOLD | 85.0% | 1.0/10 | • Position size set for initial exposure management.<br>• Monitoring technical support/resistance levels closely.<br>• Allowing the trade to play out. |
 | 10 | DIVISLAB.NS | HOLD | 85.0% | 1.0/10 | • Position set to establish clear downside bet.<br>• Monitoring the market reaction to valuation signals.<br>• Reduced trading frequency. |
+
+## 26th May 2026
+
+
+###                WEEKLY TOP 10 INDIAN STOCK PICKS - 2026-05-26
+| Rank | Ticker | Signal | Confidence | Risk Score | Qualitative Thesis |
+| :---: | :--- | :---: | :---: | :---: | :--- |
+| 1 | PREMIERENE.NS | BUY | 100.0% | 5.0/10 |  |
+| 2 | LLOYDSME.NS | BUY | 100.0% | 5.0/10 |  |
+| 3 | GESHIP.NS | BUY | 100.0% | 5.0/10 |  |
+| 4 | MCX.NS | BUY | 98.0% | 5.0/10 |  |
+| 5 | BPCL.NS | BUY | 95.0% | 5.0/10 |  |
+| 6 | HINDPETRO.NS | BUY | 95.0% | 5.0/10 |  |
+| 7 | TMCV.NS | BUY | 92.0% | 5.0/10 |  |
+| 8 | WAAREEENER.NS | BUY | 90.0% | 5.0/10 |  |
+| 9 | NH.NS | BUY | 90.0% | 5.0/10 |  |
+| 10 | COALINDIA.NS | BUY | 85.0% | 5.0/10 |  |

@@ -136,11 +136,18 @@ def save_weekly_pick(
     watchlist_name: str = "Nifty 500"
 ) -> WeeklyPick:
     """Save a weekly pick, updating if it already exists for the week, symbol, and watchlist."""
-    pick = db.query(WeeklyPick).filter(
+    query = db.query(WeeklyPick).filter(
         WeeklyPick.week_start_date == week_start_date,
         WeeklyPick.symbol == symbol,
-        WeeklyPick.watchlist_name == watchlist_name
-    ).first()
+    )
+    if watchlist_name == "Nifty 500":
+        query = query.filter(
+            (WeeklyPick.watchlist_name == "Nifty 500") | (WeeklyPick.watchlist_name == None)
+        )
+    else:
+        query = query.filter(WeeklyPick.watchlist_name == watchlist_name)
+
+    pick = query.first()
     
     if not pick:
         pick = WeeklyPick(
@@ -158,6 +165,21 @@ def save_weekly_pick(
     
     db.commit()
     return pick
+
+
+def delete_weekly_picks(db: Session, week_start_date: str, watchlist_name: str = "Nifty 500") -> int:
+    """Delete cached weekly picks for a week and watchlist before replacing the list."""
+    query = db.query(WeeklyPick).filter(WeeklyPick.week_start_date == week_start_date)
+    if watchlist_name == "Nifty 500":
+        query = query.filter(
+            (WeeklyPick.watchlist_name == "Nifty 500") | (WeeklyPick.watchlist_name == None)
+        )
+    else:
+        query = query.filter(WeeklyPick.watchlist_name == watchlist_name)
+
+    deleted_count = query.delete(synchronize_session=False)
+    db.commit()
+    return deleted_count
 
 def get_weekly_picks(db: Session, week_start_date: str, watchlist_name: str = "Nifty 500") -> list[WeeklyPick]:
     """Retrieve all picks for a specific week and watchlist."""
@@ -320,5 +342,4 @@ def delete_watchlist(db: Session, name: str) -> bool:
         db.commit()
         return True
     return False
-
 
