@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Calendar, Play, Loader2, Shield, AlertCircle, PlusCircle, MinusCircle, Plus, ListPlus, Trash2, Settings, X, Database, ExternalLink, FileImage, FileText } from 'lucide-react';
+import { Calendar, Play, Loader2, Shield, AlertCircle, PlusCircle, MinusCircle, Plus, ListPlus, Trash2, Settings, X, Database, ExternalLink, FileImage, FileText, Sparkles } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -325,6 +325,122 @@ export function WeeklyPicksDashboard() {
     return (node.textContent || node.innerText || '').replace(/\s+/g, ' ').trim();
   };
 
+  const getReadableText = (content: string) => {
+    const node = document.createElement('div');
+    node.innerHTML = content;
+    return (node.innerText || node.textContent || content)
+      .replace(/\u00a0/g, ' ')
+      .replace(/\r\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  };
+
+  const cleanBulletText = (line: string) => line.replace(/^[-*•]\s*/, '').trim();
+
+  const parseThesis = (content: string) => {
+    const text = getReadableText(content);
+    const lines = text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const sections: { title: string; bullets: string[] }[] = [];
+    let current: { title: string; bullets: string[] } | null = null;
+
+    const isHeading = (line: string) => {
+      if (/^[-*•]/.test(line)) return false;
+      if (/^decision summary:?$/i.test(line)) return true;
+      if (/^agent view:?$/i.test(line)) return true;
+      return line.length <= 70 && !/[.!?]$/.test(line);
+    };
+
+    lines.forEach((line) => {
+      if (isHeading(line)) {
+        current = { title: line.replace(/:$/, ''), bullets: [] };
+        sections.push(current);
+        return;
+      }
+
+      if (!current) {
+        current = { title: 'Decision Summary', bullets: [] };
+        sections.push(current);
+      }
+      current.bullets.push(cleanBulletText(line));
+    });
+
+    const decisionSummary = sections.find((section) => /^decision summary$/i.test(section.title));
+    const fallbackSummary = sections.find((section) => section.bullets.length > 0);
+    return {
+      text,
+      sections,
+      decisionSummary: decisionSummary || fallbackSummary || { title: 'Decision Summary', bullets: [] },
+    };
+  };
+
+  const renderDecisionSummary = (pick: WeeklyPick, compact = false) => {
+    const { decisionSummary } = parseThesis(pick.thesis);
+    const bullets = decisionSummary.bullets.slice(0, compact ? 4 : 6);
+
+    if (bullets.length === 0) {
+      return (
+        <p className="text-[11px] text-gray-400 leading-relaxed">
+          No decision summary was generated for this pick.
+        </p>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        {bullets.map((bullet, index) => (
+          <div key={`${pick.symbol}-summary-${index}`} className="grid grid-cols-[14px_1fr] gap-2 text-[11px] leading-relaxed text-gray-300">
+            <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.35)]" />
+            <span>{bullet}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderThesisSections = (pick: WeeklyPick) => {
+    const { sections } = parseThesis(pick.thesis);
+    const visibleSections = sections.filter((section) => section.bullets.length > 0);
+
+    if (visibleSections.length === 0) {
+      return (
+        <p className="text-xs text-gray-400">
+          No qualitative thesis was generated for this pick.
+        </p>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        {visibleSections.map((section, sectionIndex) => {
+          const isSummary = /^decision summary$/i.test(section.title);
+          return (
+            <section
+              key={`${pick.symbol}-${section.title}-${sectionIndex}`}
+              className={isSummary ? 'rounded-lg border border-cyan-500/20 bg-cyan-500/[0.06] p-3' : 'rounded-lg border border-ramp-grey-800 bg-ramp-grey-950/70 p-3'}
+            >
+              <h4 className={`mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider ${isSummary ? 'text-cyan-300' : 'text-gray-400'}`}>
+                {isSummary && <Sparkles className="h-3 w-3" />}
+                {section.title}
+              </h4>
+              <div className="space-y-1.5">
+                {section.bullets.map((bullet, bulletIndex) => (
+                  <div key={`${section.title}-${bulletIndex}`} className="grid grid-cols-[14px_1fr] gap-2 text-xs leading-relaxed text-gray-300">
+                    <span className={`mt-[7px] h-1.5 w-1.5 rounded-full ${isSummary ? 'bg-cyan-300' : 'bg-gray-500'}`} />
+                    <span>{bullet}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    );
+  };
+
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -363,7 +479,7 @@ export function WeeklyPicksDashboard() {
       const width = 1600;
       const padding = 64;
       const cardGap = 24;
-      const cardHeight = 220;
+      const cardHeight = 268;
       const headerHeight = 180;
       const footerHeight = 56;
       const height = headerHeight + picks.length * (cardHeight + cardGap) + footerHeight;
@@ -400,15 +516,25 @@ export function WeeklyPicksDashboard() {
         const x = padding;
         const cardWidth = width - padding * 2;
         const isBuy = pick.signal.toLowerCase() === 'buy';
-        const thesis = getPlainText(pick.thesis);
+        const { decisionSummary } = parseThesis(pick.thesis);
+        const summaryBullets = decisionSummary.bullets.slice(0, 4);
 
-        ctx.fillStyle = '#111827';
-        ctx.strokeStyle = '#263244';
+        ctx.fillStyle = '#101722';
+        ctx.strokeStyle = pick.rank <= 3 ? '#475569' : '#263244';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.roundRect(x, y, cardWidth, cardHeight, 16);
+        ctx.roundRect(x, y, cardWidth, cardHeight, 18);
         ctx.fill();
         ctx.stroke();
+
+        const cardGradient = ctx.createLinearGradient(x, y, x + cardWidth, y);
+        cardGradient.addColorStop(0, 'rgba(6, 182, 212, 0.16)');
+        cardGradient.addColorStop(0.55, 'rgba(79, 70, 229, 0.04)');
+        cardGradient.addColorStop(1, 'rgba(15, 23, 42, 0)');
+        ctx.fillStyle = cardGradient;
+        ctx.beginPath();
+        ctx.roundRect(x + 2, y + 2, cardWidth - 4, 74, 16);
+        ctx.fill();
 
         ctx.fillStyle = pick.rank <= 3 ? '#f59e0b' : '#06b6d4';
         ctx.beginPath();
@@ -427,6 +553,17 @@ export function WeeklyPicksDashboard() {
         ctx.font = '500 18px Inter, Arial, sans-serif';
         ctx.fillText(pick.name.slice(0, 76), x + 92, y + 74);
 
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.12)';
+        ctx.strokeStyle = 'rgba(103, 232, 249, 0.34)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x + 92, y + 98, 202, 30, 15);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#67e8f9';
+        ctx.font = '700 14px Inter, Arial, sans-serif';
+        ctx.fillText('DECISION SUMMARY', x + 108, y + 118);
+
         ctx.fillStyle = isBuy ? '#10b981' : '#f59e0b';
         ctx.font = '700 18px Inter, Arial, sans-serif';
         ctx.fillText(pick.signal.toUpperCase(), x + cardWidth - 310, y + 44);
@@ -437,9 +574,14 @@ export function WeeklyPicksDashboard() {
 
         ctx.fillStyle = '#d1d5db';
         ctx.font = '400 19px Inter, Arial, sans-serif';
-        const lines = wrapCanvasText(ctx, thesis, cardWidth - 130).slice(0, 4);
-        lines.forEach((line, lineIndex) => {
-          ctx.fillText(line, x + 92, y + 124 + lineIndex * 25);
+        const summaryLines = summaryBullets.flatMap((bullet) => wrapCanvasText(ctx, bullet, cardWidth - 160).slice(0, 2)).slice(0, 5);
+        summaryLines.forEach((line, lineIndex) => {
+          ctx.fillStyle = '#22d3ee';
+          ctx.beginPath();
+          ctx.arc(x + 102, y + 154 + lineIndex * 25, 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#d1d5db';
+          ctx.fillText(line, x + 118, y + 160 + lineIndex * 25);
         });
       });
 
@@ -544,11 +686,23 @@ export function WeeklyPicksDashboard() {
         `Exported ${new Date().toLocaleString('en-IN')}`,
         '',
         ...picks.flatMap((pick) => {
-          const thesis = getPlainText(pick.thesis);
+          const { decisionSummary, sections } = parseThesis(pick.thesis);
+          const summaryLines = decisionSummary.bullets.length
+            ? decisionSummary.bullets.flatMap((bullet) => wrapPdfText(`- ${bullet}`, 95))
+            : wrapPdfText(`- ${getPlainText(pick.thesis)}`, 95).slice(0, 4);
+          const otherSections = sections
+            .filter((section) => !/^decision summary$/i.test(section.title) && section.bullets.length > 0)
+            .slice(0, 3)
+            .flatMap((section) => [
+              `${section.title}:`,
+              ...section.bullets.slice(0, 2).flatMap((bullet) => wrapPdfText(`- ${bullet}`, 95)),
+            ]);
           return [
             `#${pick.rank} ${pick.symbol.replace('.NS', '')} - ${pick.name}`,
             `Signal: ${pick.signal.toUpperCase()} | Conviction: ${pick.score}% | Risk: ${pick.risk_score}/10`,
-            ...wrapPdfText(`Thesis: ${thesis}`, 95).slice(0, 8),
+            'Decision Summary:',
+            ...summaryLines.slice(0, 8),
+            ...otherSections,
             '',
           ];
         }),
@@ -865,11 +1019,11 @@ export function WeeklyPicksDashboard() {
                                   'from-cyan-500 to-indigo-500';
                                   
                 return (
-                  <Card key={pick.symbol} className="bg-ramp-grey-900 border-ramp-grey-800 text-white shadow-xl hover:border-ramp-grey-700 transition-all duration-300 overflow-hidden flex flex-col">
+                  <Card key={pick.symbol} className="group bg-ramp-grey-900/95 border-ramp-grey-800 text-white shadow-xl hover:border-cyan-500/30 hover:shadow-cyan-950/20 transition-all duration-300 overflow-hidden flex flex-col">
                     {/* Glowing header showing rank & symbol */}
-                    <div className="p-4 border-b border-ramp-grey-800 bg-ramp-grey-950 flex items-center justify-between flex-shrink-0">
+                    <div className="p-4 border-b border-ramp-grey-800 bg-gradient-to-r from-ramp-grey-950 via-ramp-grey-950 to-ramp-grey-900 flex items-start justify-between gap-3 flex-shrink-0">
                       <div className="flex items-center gap-3">
-                        <div className={`h-8 w-8 rounded-full bg-gradient-to-r ${rankColor} flex items-center justify-center font-bold text-white text-sm shadow-md`}>
+                        <div className={`h-9 w-9 rounded-full bg-gradient-to-r ${rankColor} flex items-center justify-center font-bold text-white text-sm shadow-md ring-2 ring-white/5`}>
                           {pick.rank}
                         </div>
                         <div className="flex flex-col">
@@ -908,7 +1062,7 @@ export function WeeklyPicksDashboard() {
                           <span className="text-xs text-gray-400 mt-1 truncate max-w-[200px]">{pick.name}</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap justify-end items-center gap-2">
                         <Badge variant={isBuy ? 'success' : 'warning'} className="text-xs py-0.5 px-2.5">
                           {pick.signal.toUpperCase()}
                         </Badge>
@@ -925,7 +1079,7 @@ export function WeeklyPicksDashboard() {
                         <div className="md:col-span-5 flex flex-col justify-between gap-3 h-full">
                           <div className="space-y-3">
                             {/* Confidence & Risk */}
-                            <div className="grid grid-cols-2 gap-2 bg-ramp-grey-950/50 p-2.5 rounded-lg border border-ramp-grey-800/40 text-xs">
+                            <div className="grid grid-cols-2 gap-2 bg-ramp-grey-950/70 p-2.5 rounded-lg border border-ramp-grey-800/60 text-xs shadow-inner">
                               <div className="flex flex-col gap-0.5">
                                 <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Confidence</span>
                                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -949,7 +1103,7 @@ export function WeeklyPicksDashboard() {
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2 bg-ramp-grey-950/50 p-2.5 rounded-lg border border-ramp-grey-800/40 text-xs">
+                            <div className="grid grid-cols-2 gap-2 bg-ramp-grey-950/70 p-2.5 rounded-lg border border-ramp-grey-800/60 text-xs shadow-inner">
                               <div className="flex flex-col gap-0.5">
                                 <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Analysis Price</span>
                                 <span className="font-bold text-gray-200 text-xs leading-none mt-0.5">{formatPrice(pick.analysis_price)}</span>
@@ -974,25 +1128,25 @@ export function WeeklyPicksDashboard() {
                               );
                               return (
                                 <div className="grid grid-cols-2 gap-2 text-[10px] text-gray-400">
-                                  <div className="bg-ramp-grey-950/40 border border-ramp-grey-800/30 rounded-lg p-2 flex flex-col justify-between">
+                                  <div className="bg-ramp-grey-950/60 border border-ramp-grey-800/40 rounded-lg p-2 flex flex-col justify-between">
                                     <span className="text-[9px] text-gray-500 uppercase font-semibold">Market Cap</span>
                                     <span className="font-bold text-gray-200 mt-1">
                                       {formatMarketCap(stockDetail.fundamentals?.market_cap)}
                                     </span>
                                   </div>
-                                  <div className="bg-ramp-grey-950/40 border border-ramp-grey-800/30 rounded-lg p-2 flex flex-col justify-between">
+                                  <div className="bg-ramp-grey-950/60 border border-ramp-grey-800/40 rounded-lg p-2 flex flex-col justify-between">
                                     <span className="text-[9px] text-gray-500 uppercase font-semibold">1Y Return</span>
                                     <span className={`font-bold mt-1 ${stockDetail.performance_1y && stockDetail.performance_1y >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                       {formatPercent(stockDetail.performance_1y)}
                                     </span>
                                   </div>
-                                  <div className="bg-ramp-grey-950/40 border border-ramp-grey-800/30 rounded-lg p-2 flex flex-col justify-between">
+                                  <div className="bg-ramp-grey-950/60 border border-ramp-grey-800/40 rounded-lg p-2 flex flex-col justify-between">
                                     <span className="text-[9px] text-gray-500 uppercase font-semibold">P/E Ratio</span>
                                     <span className="font-bold text-gray-200 mt-1">
                                       {stockDetail.fundamentals?.pe_ratio ? stockDetail.fundamentals.pe_ratio.toFixed(1) : '—'}
                                     </span>
                                   </div>
-                                  <div className="bg-ramp-grey-950/40 border border-ramp-grey-800/30 rounded-lg p-2 flex flex-col justify-between">
+                                  <div className="bg-ramp-grey-950/60 border border-ramp-grey-800/40 rounded-lg p-2 flex flex-col justify-between">
                                     <span className="text-[9px] text-gray-500 uppercase font-semibold">ROE %</span>
                                     <span className="font-bold text-gray-200 mt-1">
                                       {stockDetail.fundamentals?.roe ? `${stockDetail.fundamentals.roe.toFixed(1)}%` : '—'}
@@ -1019,18 +1173,23 @@ export function WeeklyPicksDashboard() {
                         </div>
 
                         {/* Right Column: Qualitative Thesis (7 cols) */}
-                        <div className="md:col-span-7 flex flex-col h-full justify-between gap-1.5">
-                          <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold block">Qualitative Thesis</span>
-                          <div className="flex-1 min-h-[140px] max-h-[185px] overflow-y-auto bg-ramp-grey-950 p-2.5 rounded-lg border border-ramp-grey-800/50 scrollbar-thin scrollbar-thumb-ramp-grey-800 text-[11px] text-gray-300 leading-relaxed">
-                            <div 
-                              className="whitespace-pre-wrap"
-                              dangerouslySetInnerHTML={{ __html: pick.thesis }}
-                            />
+                        <div className="md:col-span-7 flex flex-col h-full justify-between gap-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="inline-flex items-center gap-1.5 text-[9px] text-cyan-300 uppercase tracking-wider font-bold">
+                              <Sparkles className="h-3 w-3" />
+                              Decision Summary
+                            </span>
+                            <span className="text-[9px] text-gray-500">
+                              {pick.risk_score <= 3 ? 'Low risk' : pick.risk_score <= 6 ? 'Medium risk' : 'High risk'}
+                            </span>
+                          </div>
+                          <div className="flex-1 min-h-[156px] max-h-[196px] overflow-y-auto bg-gradient-to-b from-cyan-500/[0.07] to-ramp-grey-950 p-3 rounded-lg border border-cyan-500/20 scrollbar-thin scrollbar-thumb-ramp-grey-800">
+                            {renderDecisionSummary(pick, true)}
                           </div>
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-8 justify-start bg-ramp-grey-950 border-ramp-grey-800 hover:bg-ramp-grey-800 text-cyan-300 text-xs"
+                            className="h-8 justify-start bg-ramp-grey-950 border-ramp-grey-800 hover:border-cyan-500/40 hover:bg-ramp-grey-800 text-cyan-300 text-xs"
                             onClick={() => setSelectedAnalysis(pick)}
                           >
                             <ExternalLink className="h-3.5 w-3.5 mr-2" />
@@ -1251,9 +1410,12 @@ export function WeeklyPicksDashboard() {
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
                 <div className="min-h-0">
-                  <h3 className="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-2">Qualitative Thesis</h3>
-                  <div className="max-h-[46vh] overflow-y-auto bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3 text-xs text-gray-300 leading-relaxed">
-                    <div className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: selectedAnalysis.thesis }} />
+                  <h3 className="text-xs uppercase tracking-wider text-cyan-300 font-semibold mb-2 flex items-center gap-2">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Thesis Breakdown
+                  </h3>
+                  <div className="max-h-[46vh] overflow-y-auto bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3 text-xs text-gray-300 leading-relaxed scrollbar-thin scrollbar-thumb-ramp-grey-800">
+                    {renderThesisSections(selectedAnalysis)}
                   </div>
                 </div>
                 <div className="min-h-0">
