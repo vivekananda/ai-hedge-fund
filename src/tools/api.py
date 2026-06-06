@@ -169,7 +169,7 @@ def get_financial_metrics(
         sales_growth = None
 
         if snap:
-            market_cap = snap.market_cap
+            market_cap = snap.market_cap * 1e7 if snap.market_cap else None
             pe_ratio = snap.pe_ratio
             pb_ratio = snap.pb_ratio
             roe = (snap.roe_current or snap.roe_5yr or 0.0) / 100.0 if (snap.roe_current or snap.roe_5yr) else None
