@@ -257,6 +257,7 @@ def _generate_weekly_pick_reviews(
     analyst_signals: dict,
     model_name: str,
     model_provider: str,
+    api_keys: dict = None,
 ) -> dict[str, WeeklyPickReview]:
     fallback_reviews = {
         pick["symbol"]: WeeklyPickReview(
@@ -319,6 +320,7 @@ def _generate_weekly_pick_reviews(
         "metadata": {
             "model_name": model_name,
             "model_provider": model_provider,
+            "api_keys": api_keys,
         }
     }
 
@@ -367,6 +369,15 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
     init_db()
     db = SessionLocal()
     
+    # Load API keys from database for downstream LLM agents
+    api_keys = {}
+    try:
+        from sqlalchemy import text
+        result = db.execute(text("SELECT provider, key_value FROM api_keys WHERE is_active = 1"))
+        api_keys = {row[0]: row[1] for row in result.fetchall()}
+    except Exception as e:
+        print(f"Could not load API keys from database in weekly pipeline: {e}")
+        
     try:
         # Sync Nifty 500
         sync_nifty500_universe(db)
@@ -461,6 +472,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                 "roe": roe,
                 "roce": roce,
                 "debt_to_equity": debt_to_equity,
+                "sales_growth": sales_growth,
                 "price_above_44": price_above_44_sma,
                 "rsi": rsi_val,
                 "analysis_price": analysis_price,
@@ -514,7 +526,8 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                     show_reasoning=False,
                     selected_analysts=["technical_analyst", "fundamentals_analyst", "valuation_analyst"],
                     model_name=model_name,
-                    model_provider=model_provider
+                    model_provider=model_provider,
+                    api_keys=api_keys
                 )
                 
                 if result and result.get("decisions"):
@@ -566,6 +579,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
             analyst_signals=all_analyst_signals,
             model_name=model_name,
             model_provider=model_provider,
+            api_keys=api_keys,
         )
         for pick in final_top_50:
             review = qualitative_reviews.get(pick["symbol"])

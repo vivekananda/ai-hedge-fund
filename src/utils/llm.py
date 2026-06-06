@@ -42,9 +42,12 @@ def call_llm(
     # Extract API keys from state if available
     api_keys = None
     if state:
-        request = state.get("metadata", {}).get("request")
+        metadata = state.get("metadata", {})
+        request = metadata.get("request")
         if request and hasattr(request, 'api_keys'):
             api_keys = request.api_keys
+        if not api_keys and "api_keys" in metadata:
+            api_keys = metadata["api_keys"]
 
     # Check if we have a valid API key for the selected provider
     has_valid_key = True
@@ -55,8 +58,8 @@ def call_llm(
         if not key or "your-openai" in key or "your-api" in key:
             has_valid_key = False
     elif provider_upper == "GOOGLE" or provider_upper == "GEMINI":
-        key = (api_keys or {}).get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not key or "your-google" in key or "your-api" in key:
+        key = (api_keys or {}).get("GOOGLE_API_KEY") or (api_keys or {}).get("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not key or "your-google" in key or "your-api" in key or "your-gemini" in key:
             has_valid_key = False
     elif provider_upper == "GROQ":
         key = (api_keys or {}).get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")

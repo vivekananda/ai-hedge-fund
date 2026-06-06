@@ -35,6 +35,11 @@
     "provider": "OpenAI"
   },
   {
+    "display_name": "[lmstudio] qwen/qwen3.5-9b",
+    "model_name": "qwen/qwen3.5-9b",
+    "provider": "LMStudio"
+  },
+  {
     "display_name": "[lmstudio] google/gemma-4-e4b",
     "model_name": "google/gemma-4-e4b",
     "provider": "LMStudio"

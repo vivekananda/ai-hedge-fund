@@ -246,6 +246,12 @@ def test_weekly_pipeline_saves_non_empty_fallback_thesis_when_decisions_have_no_
     assert all("Agent view:" in pick["thesis"] for pick in saved_picks)
     assert all(1.0 <= pick["risk_score"] <= 10.0 for pick in saved_picks)
 
+    import json
+    for pick in saved_picks:
+        details = json.loads(pick["analysis_details"])
+        assert details["screen_metrics"]["sales_growth"] == 16.0
+
+
 
 def test_delete_weekly_picks_removes_stale_legacy_nifty_rows_before_replacing_list():
     db = _db_session()

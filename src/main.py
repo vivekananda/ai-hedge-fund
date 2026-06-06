@@ -52,9 +52,22 @@ def run_hedge_fund(
     selected_analysts: list[str] = [],
     model_name: str = "gpt-4.1",
     model_provider: str = "OpenAI",
+    api_keys: dict = None,
 ):
     # Start progress tracking
     progress.start()
+
+    # If api_keys is not provided, load it from the database if possible
+    if not api_keys:
+        try:
+            from src.db.connection import SessionLocal
+            from sqlalchemy import text
+            db = SessionLocal()
+            result = db.execute(text("SELECT provider, key_value FROM api_keys WHERE is_active = 1"))
+            api_keys = {row[0]: row[1] for row in result.fetchall()}
+            db.close()
+        except Exception as e:
+            api_keys = {}
 
     try:
         # Build workflow (default to all analysts when none provided)
@@ -79,6 +92,7 @@ def run_hedge_fund(
                     "show_reasoning": show_reasoning,
                     "model_name": model_name,
                     "model_provider": model_provider,
+                    "api_keys": api_keys,
                 },
             },
         )

@@ -12,7 +12,7 @@ if [ -n "$PID" ]; then
 else
   echo "No process running on port $PORT."
 fi
-
+sleep 10
 # Start FastAPI server
 echo "Starting backend server..."
 nohup .venv/bin/python -m uvicorn app.backend.main:app --reload --port $PORT > backend.log 2>&1 &

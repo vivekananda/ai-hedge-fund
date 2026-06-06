@@ -8,6 +8,7 @@ from app.backend.database.models import ApiKey
 
 API_KEY_PROVIDER_ALIASES = {
     "GROK_API_KEY": "XAI_API_KEY",
+    "GEMINI_API_KEY": "GOOGLE_API_KEY",
 }
 
 
