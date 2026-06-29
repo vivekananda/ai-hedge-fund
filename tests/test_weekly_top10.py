@@ -51,6 +51,24 @@ def _sample_signals():
         "valuation_analyst_agent": {
             "ABC.NS": {"signal": "neutral", "confidence": 40}
         },
+        "intrinsic_value_analyst_agent": {
+            "ABC.NS": {
+                "signal": "bullish",
+                "confidence": 91,
+                "reasoning": {
+                    "intrinsic_value": {
+                        "intrinsic_value_per_share": 125.0,
+                        "current_price": 90.0,
+                        "margin_of_safety": 0.3889,
+                        "method": "discounted_cash_flow",
+                        "source": "estimated",
+                        "currency": "INR",
+                    },
+                    "assumptions": {"growth_rate": 0.05},
+                    "metrics": {"free_cash_flow_per_share": 8.0},
+                },
+            }
+        },
         "risk_management_agent": {
             "ABC.NS": {
                 "volatility_metrics": {
@@ -170,6 +188,23 @@ def test_weekly_pick_reviews_fallback_only_for_missing_llm_review(monkeypatch):
     assert 1.0 <= reviews["XYZ.NS"].risk_score <= 10.0
 
 
+def test_extract_intrinsic_value_normalizes_agent_signal():
+    intrinsic = weekly_top10._extract_intrinsic_value("ABC.NS", _sample_signals())
+
+    assert intrinsic["intrinsic_value_per_share"] == 125.0
+    assert intrinsic["current_price"] == 90.0
+    assert intrinsic["margin_of_safety"] == 0.3889
+    assert intrinsic["method"] == "discounted_cash_flow"
+    assert intrinsic["source"] == "estimated"
+    assert intrinsic["signal"] == "bullish"
+    assert intrinsic["confidence"] == 91
+    assert intrinsic["assumptions"]["growth_rate"] == 0.05
+
+
+def test_extract_intrinsic_value_returns_none_when_signal_missing():
+    assert weekly_top10._extract_intrinsic_value("XYZ.NS", _sample_signals()) is None
+
+
 def test_weekly_pipeline_saves_non_empty_fallback_thesis_when_decisions_have_no_thesis(monkeypatch):
     saved_picks = []
 
@@ -198,6 +233,7 @@ def test_weekly_pipeline_saves_non_empty_fallback_thesis_when_decisions_have_no_
     )
 
     def fake_run_hedge_fund(tickers, *args, **kwargs):
+        assert "intrinsic_value_analyst" in kwargs["selected_analysts"]
         return {
             "decisions": {
                 ticker: {
@@ -215,6 +251,25 @@ def test_weekly_pipeline_saves_non_empty_fallback_thesis_when_decisions_have_no_
                 },
                 "fundamentals_analyst_agent": {
                     ticker: {"signal": "bullish", "confidence": 80}
+                    for ticker in tickers
+                },
+                "intrinsic_value_analyst_agent": {
+                    ticker: {
+                        "signal": "bullish",
+                        "confidence": 85,
+                        "reasoning": {
+                            "intrinsic_value": {
+                                "intrinsic_value_per_share": 140.0,
+                                "current_price": 100.0,
+                                "margin_of_safety": 0.4,
+                                "method": "discounted_cash_flow",
+                                "source": "estimated",
+                                "currency": "INR",
+                            },
+                            "assumptions": {"growth_rate": 0.04},
+                            "metrics": {"free_cash_flow_per_share": 10.0},
+                        },
+                    }
                     for ticker in tickers
                 },
                 "risk_management_agent": {
@@ -250,6 +305,8 @@ def test_weekly_pipeline_saves_non_empty_fallback_thesis_when_decisions_have_no_
     for pick in saved_picks:
         details = json.loads(pick["analysis_details"])
         assert details["screen_metrics"]["sales_growth"] == 16.0
+        assert details["intrinsic_value"]["intrinsic_value_per_share"] == 140.0
+        assert details["intrinsic_value"]["margin_of_safety"] == 0.4
 
 
 

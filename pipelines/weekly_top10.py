@@ -193,6 +193,50 @@ def _compact_signal_summary(symbol: str, analyst_signals: dict) -> list[str]:
     return summary
 
 
+def _extract_intrinsic_value(symbol: str, analyst_signals: dict) -> dict | None:
+    signal = (analyst_signals or {}).get("intrinsic_value_analyst_agent", {}).get(symbol)
+    if not signal:
+        return None
+
+    reasoning = signal.get("reasoning") if isinstance(signal, dict) else None
+    reasoning = reasoning if isinstance(reasoning, dict) else {}
+    intrinsic_reasoning = reasoning.get("intrinsic_value_signal")
+    intrinsic_reasoning = intrinsic_reasoning if isinstance(intrinsic_reasoning, dict) else {}
+    intrinsic_value = reasoning.get("intrinsic_value")
+    intrinsic_value = intrinsic_value if isinstance(intrinsic_value, dict) else {}
+    assumptions = reasoning.get("assumptions") if isinstance(reasoning.get("assumptions"), dict) else {}
+    metrics = reasoning.get("metrics") if isinstance(reasoning.get("metrics"), dict) else {}
+
+    details = intrinsic_reasoning.get("details") or ""
+    normalized = {
+        "intrinsic_value_per_share": intrinsic_value.get("intrinsic_value_per_share"),
+        "current_price": intrinsic_value.get("current_price"),
+        "margin_of_safety": intrinsic_value.get("margin_of_safety"),
+        "method": intrinsic_value.get("method"),
+        "source": intrinsic_value.get("source"),
+        "currency": intrinsic_value.get("currency"),
+        "signal": signal.get("signal"),
+        "confidence": signal.get("confidence"),
+        "assumptions": assumptions,
+        "metrics": metrics,
+        "details": details,
+    }
+
+    # Keep normalized fields null-safe for old/new agent payloads.
+    if normalized["intrinsic_value_per_share"] is None:
+        normalized["intrinsic_value_per_share"] = metrics.get("intrinsic_value") or metrics.get("fair_value")
+    if normalized["current_price"] is None:
+        normalized["current_price"] = metrics.get("price")
+    if normalized["margin_of_safety"] is None:
+        normalized["margin_of_safety"] = metrics.get("margin_of_safety")
+    if normalized["method"] is None:
+        normalized["method"] = metrics.get("method")
+    if normalized["source"] is None:
+        normalized["source"] = metrics.get("source")
+
+    return normalized
+
+
 def _fallback_risk_score(symbol: str, candidate: dict | None, analyst_signals: dict) -> float:
     risk_signal = (analyst_signals or {}).get("risk_management_agent", {}).get(symbol, {})
     volatility = (
@@ -524,7 +568,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                     end_date=end_date_run,
                     portfolio=mock_portfolio,
                     show_reasoning=False,
-                    selected_analysts=["technical_analyst", "fundamentals_analyst", "valuation_analyst"],
+                    selected_analysts=["technical_analyst", "fundamentals_analyst", "valuation_analyst", "intrinsic_value_analyst"],
                     model_name=model_name,
                     model_provider=model_provider,
                     api_keys=api_keys
@@ -617,6 +661,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                     "reasoning": pick.get("reasoning"),
                 },
                 "screen_metrics": candidate,
+                "intrinsic_value": _extract_intrinsic_value(symbol, all_analyst_signals),
                 "agent_sections": _detailed_agent_sections(symbol, all_analyst_signals),
                 "analyst_signals": {
                     agent_name: signals.get(symbol)

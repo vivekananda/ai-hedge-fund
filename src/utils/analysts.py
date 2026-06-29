@@ -20,6 +20,7 @@ from src.agents.mohnish_pabrai import mohnish_pabrai_agent
 from src.agents.nassim_taleb import nassim_taleb_agent
 from src.agents.news_sentiment import news_sentiment_agent
 from src.agents.growth_agent import growth_analyst_agent
+from src.agents.intrinsic_value import intrinsic_value_analyst_agent
 
 # Define analyst configuration - single source of truth
 ANALYST_CONFIG = {
@@ -151,13 +152,21 @@ ANALYST_CONFIG = {
         "type": "analyst",
         "order": 15,
     },
+    "intrinsic_value_analyst": {
+        "display_name": "Intrinsic Value Analyst",
+        "description": "Intrinsic Value Specialist",
+        "investing_style": "Checks reported fair value data and conservative local valuation estimates to compare intrinsic value against the current market price.",
+        "agent_func": intrinsic_value_analyst_agent,
+        "type": "analyst",
+        "order": 16,
+    },
     "news_sentiment_analyst": {
         "display_name": "News Sentiment Analyst",
         "description": "News Sentiment Specialist",
         "investing_style": "Analyzes news sentiment to predict market movements and identify opportunities through news analysis.",
         "agent_func": news_sentiment_agent,
         "type": "analyst",
-        "order": 16,
+        "order": 17,
     },
     "sentiment_analyst": {
         "display_name": "Sentiment Analyst",
@@ -165,7 +174,7 @@ ANALYST_CONFIG = {
         "investing_style": "Gauges market sentiment and investor behavior to predict market movements and identify opportunities through behavioral analysis.",
         "agent_func": sentiment_analyst_agent,
         "type": "analyst",
-        "order": 17,
+        "order": 18,
     },
     "valuation_analyst": {
         "display_name": "Valuation Analyst",
@@ -173,7 +182,7 @@ ANALYST_CONFIG = {
         "investing_style": "Specializes in determining the fair value of companies, using various valuation models and financial metrics for investment decisions.",
         "agent_func": valuation_analyst_agent,
         "type": "analyst",
-        "order": 18,
+        "order": 19,
     },
 }
 

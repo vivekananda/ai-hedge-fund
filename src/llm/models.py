@@ -87,6 +87,10 @@ class LLMModel(BaseModel):
         return self.provider == ModelProvider.OLLAMA
 
 
+DEFAULT_MODEL_NAME = "qwen/qwen3.7-plus"
+DEFAULT_MODEL_PROVIDER = ModelProvider.OPENROUTER
+
+
 # Load models from JSON file
 def load_models_from_json(json_path: str) -> List[LLMModel]:
     """Load models from a JSON file"""

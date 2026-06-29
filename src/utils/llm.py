@@ -2,7 +2,7 @@
 
 import json
 from pydantic import BaseModel
-from src.llm.models import get_model, get_model_info
+from src.llm.models import DEFAULT_MODEL_NAME, DEFAULT_MODEL_PROVIDER, get_model, get_model_info
 from src.utils.progress import progress
 from src.graph.state import AgentState
 
@@ -36,8 +36,8 @@ def call_llm(
         model_name, model_provider = get_agent_model_config(state, agent_name)
     else:
         # Use system defaults when no state or agent_name is provided
-        model_name = "gpt-4.1"
-        model_provider = "OPENAI"
+        model_name = DEFAULT_MODEL_NAME
+        model_provider = DEFAULT_MODEL_PROVIDER.value
 
     # Extract API keys from state if available
     api_keys = None
@@ -72,6 +72,10 @@ def call_llm(
     elif provider_upper == "DEEPSEEK":
         key = (api_keys or {}).get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
         if not key or "your-deepseek" in key or "your-api" in key:
+            has_valid_key = False
+    elif provider_upper == "OPENROUTER":
+        key = (api_keys or {}).get("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+        if not key or "your-openrouter" in key or "your-api" in key:
             has_valid_key = False
 
     if not has_valid_key and provider_upper not in ["OLLAMA", "LMSTUDIO"]:
@@ -233,8 +237,8 @@ def get_agent_model_config(state, agent_name):
             return model_name, model_provider.value if hasattr(model_provider, 'value') else str(model_provider)
     
     # Fall back to global configuration (system defaults)
-    model_name = state.get("metadata", {}).get("model_name") or "gpt-4.1"
-    model_provider = state.get("metadata", {}).get("model_provider") or "OPENAI"
+    model_name = state.get("metadata", {}).get("model_name") or DEFAULT_MODEL_NAME
+    model_provider = state.get("metadata", {}).get("model_provider") or DEFAULT_MODEL_PROVIDER.value
     
     # Convert enum to string if necessary
     if hasattr(model_provider, 'value'):

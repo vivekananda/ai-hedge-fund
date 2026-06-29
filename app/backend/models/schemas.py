@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
-from src.llm.models import ModelProvider
+from src.llm.models import DEFAULT_MODEL_NAME, DEFAULT_MODEL_PROVIDER, ModelProvider
 from enum import Enum
 from app.backend.services.graph import extract_base_agent_key
 
@@ -63,8 +63,8 @@ class BaseHedgeFundRequest(BaseModel):
     graph_nodes: List[GraphNode]
     graph_edges: List[GraphEdge]
     agent_models: Optional[List[AgentModelConfig]] = None
-    model_name: Optional[str] = "gpt-4.1"
-    model_provider: Optional[ModelProvider] = ModelProvider.OPENAI
+    model_name: Optional[str] = DEFAULT_MODEL_NAME
+    model_provider: Optional[ModelProvider] = DEFAULT_MODEL_PROVIDER
     margin_requirement: float = 0.0
     portfolio_positions: Optional[List[PortfolioPosition]] = None
     api_keys: Optional[Dict[str, str]] = None

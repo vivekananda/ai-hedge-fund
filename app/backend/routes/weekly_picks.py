@@ -13,6 +13,7 @@ from src.db.queries import (
     update_weekly_run,
     get_weekly_runs
 )
+from src.llm.models import DEFAULT_MODEL_NAME, DEFAULT_MODEL_PROVIDER
 
 router = APIRouter(prefix="/weekly-picks")
 
@@ -26,8 +27,8 @@ def get_db():
 
 
 class RunPipelineRequest(BaseModel):
-    model_name: Optional[str] = "gemini-2.0-flash"
-    model_provider: Optional[str] = "Gemini"
+    model_name: Optional[str] = DEFAULT_MODEL_NAME
+    model_provider: Optional[str] = DEFAULT_MODEL_PROVIDER.value
     test_mode: Optional[bool] = False
     watchlist_name: Optional[str] = "Nifty 500"
 

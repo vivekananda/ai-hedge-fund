@@ -15,6 +15,7 @@ from src.utils.visualize import save_graph_as_png
 from src.cli.input import (
     parse_cli_inputs,
 )
+from src.llm.models import DEFAULT_MODEL_NAME, DEFAULT_MODEL_PROVIDER
 
 import argparse
 from datetime import datetime
@@ -50,8 +51,8 @@ def run_hedge_fund(
     portfolio: dict,
     show_reasoning: bool = False,
     selected_analysts: list[str] = [],
-    model_name: str = "gpt-4.1",
-    model_provider: str = "OpenAI",
+    model_name: str = DEFAULT_MODEL_NAME,
+    model_provider: str = DEFAULT_MODEL_PROVIDER.value,
     api_keys: dict = None,
 ):
     # Start progress tracking

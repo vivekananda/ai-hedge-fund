@@ -3,8 +3,10 @@ import { api } from '@/services/api';
 export interface LanguageModel {
   display_name: string;
   model_name: string;
-  provider: "Anthropic" | "DeepSeek" | "Google" | "Gemini" | "Groq" | "OpenAI" | "LMStudio";
+  provider: "Anthropic" | "DeepSeek" | "Google" | "Gemini" | "Groq" | "Kimi" | "OpenAI" | "OpenRouter" | "LMStudio" | "xAI";
 }
+
+export const DEFAULT_MODEL_NAME = "qwen/qwen3.7-plus";
 
 // Cache for models to avoid repeated API calls
 let languageModels: LanguageModel[] | null = null;
@@ -28,13 +30,12 @@ export const getModels = async (): Promise<LanguageModel[]> => {
 };
 
 /**
- * Get the default model (gpt-4o or similar) from the models list
+ * Get the default budget-friendly OpenRouter model from the models list
  */
 export const getDefaultModel = async (): Promise<LanguageModel | null> => {
   try {
     const models = await getModels();
-    // Default to gpt-4o or the first available model
-    return models.find(model => model.model_name === "gpt-4o") || models[0] || null;
+    return models.find(model => model.model_name === DEFAULT_MODEL_NAME) || models[0] || null;
   } catch (error) {
     console.error('Failed to get default model:', error);
     return null;

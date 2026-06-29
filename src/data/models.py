@@ -67,6 +67,18 @@ class FinancialMetricsResponse(BaseModel):
     financial_metrics: list[FinancialMetrics]
 
 
+class IntrinsicValueEstimate(BaseModel):
+    ticker: str
+    intrinsic_value_per_share: float | None = None
+    current_price: float | None = None
+    margin_of_safety: float | None = None
+    currency: str | None = None
+    source: str
+    method: str
+    assumptions: dict[str, Any] | None = None
+    metrics: dict[str, Any] | None = None
+
+
 class LineItem(BaseModel):
     ticker: str
     report_period: str

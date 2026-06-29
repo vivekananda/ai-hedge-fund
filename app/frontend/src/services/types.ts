@@ -2,8 +2,14 @@
 export enum ModelProvider {
   OPENAI = 'OpenAI',
   ANTHROPIC = 'Anthropic',
+  DEEPSEEK = 'DeepSeek',
+  GOOGLE = 'Google',
   GROQ = 'Groq',
+  KIMI = 'Kimi',
+  LMSTUDIO = 'LMStudio',
   OLLAMA = 'Ollama',
+  OPENROUTER = 'OpenRouter',
+  XAI = 'xAI',
 }
 
 export interface AgentModelConfig {

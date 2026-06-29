@@ -5,9 +5,235 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { ModelSelector } from './ui/llm-selector';
-import { getModels, LanguageModel } from '@/data/models';
+import { DEFAULT_MODEL_NAME, getModels, LanguageModel } from '@/data/models';
 import { api, WeeklyPick, WeeklyRun } from '@/services/api';
 import { useWatchlist } from '@/contexts/watchlist-context';
+
+type AgentSignalTone = 'bullish' | 'bearish' | 'neutral' | 'risk' | 'summary' | 'unknown';
+
+interface AgentThesisSection {
+  agent?: string;
+  signal?: string;
+  confidence?: number;
+  bullets?: string[];
+}
+
+interface StockPricePoint {
+  date: string;
+  close: number;
+}
+
+interface HistoricalPriceComparison {
+  label: string;
+  targetDate: string;
+  actualDate?: string;
+  price?: number;
+  percentFromThen?: number;
+}
+
+const AGENT_SIGNAL_LEGEND: { tone: AgentSignalTone; label: string; className: string }[] = [
+  { tone: 'bullish', label: 'Bullish / Buy', className: 'bg-emerald-400' },
+  { tone: 'bearish', label: 'Bearish / Sell', className: 'bg-rose-400' },
+  { tone: 'neutral', label: 'Neutral / Hold', className: 'bg-amber-300' },
+  { tone: 'risk', label: 'Risk', className: 'bg-violet-300' },
+  { tone: 'unknown', label: 'Other', className: 'bg-slate-400' },
+];
+
+let isMermaidInitialized = false;
+let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null;
+
+function loadMermaid() {
+  mermaidModulePromise = mermaidModulePromise || import('mermaid');
+  return mermaidModulePromise;
+}
+
+function getAgentSections(pick: WeeklyPick): AgentThesisSection[] {
+  const sections = pick.analysis_details?.agent_sections;
+  return Array.isArray(sections) ? sections : [];
+}
+
+function getIntrinsicValue(pick: WeeklyPick) {
+  return pick.analysis_details?.intrinsic_value || null;
+}
+
+function getSignalTone(signal?: string, agentName?: string): AgentSignalTone {
+  const normalizedSignal = (signal || '').toLowerCase();
+  const normalizedAgent = (agentName || '').toLowerCase();
+
+  if (normalizedSignal.includes('bull') || normalizedSignal.includes('buy') || normalizedSignal.includes('long') || normalizedSignal.includes('low')) {
+    return 'bullish';
+  }
+
+  if (normalizedSignal.includes('bear') || normalizedSignal.includes('sell') || normalizedSignal.includes('short') || normalizedSignal.includes('high')) {
+    return 'bearish';
+  }
+
+  if (normalizedSignal.includes('neutral') || normalizedSignal.includes('hold') || normalizedSignal.includes('medium')) {
+    return 'neutral';
+  }
+
+  if (normalizedAgent.includes('risk')) {
+    return 'risk';
+  }
+
+  return 'unknown';
+}
+
+function escapeMermaidLabel(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\[/g, '(')
+    .replace(/\]/g, ')')
+    .replace(/\|/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function formatAgentConfidence(confidence: unknown): string {
+  if (typeof confidence !== 'number' || Number.isNaN(confidence)) {
+    return 'n/a';
+  }
+
+  const normalized = confidence > 0 && confidence <= 1 ? confidence * 100 : confidence;
+  return `${Math.round(normalized)}%`;
+}
+
+function getCanvasToneColors(tone: AgentSignalTone) {
+  switch (tone) {
+    case 'bullish':
+      return { fill: '#064e3b', stroke: '#34d399', text: '#ecfdf5', subtext: '#a7f3d0' };
+    case 'bearish':
+      return { fill: '#7f1d1d', stroke: '#fb7185', text: '#fff1f2', subtext: '#fecdd3' };
+    case 'neutral':
+      return { fill: '#451a03', stroke: '#fbbf24', text: '#fffbeb', subtext: '#fde68a' };
+    case 'risk':
+      return { fill: '#581c87', stroke: '#c084fc', text: '#faf5ff', subtext: '#e9d5ff' };
+    case 'summary':
+      return { fill: '#083344', stroke: '#22d3ee', text: '#ecfeff', subtext: '#a5f3fc' };
+    default:
+      return { fill: '#1e293b', stroke: '#94a3b8', text: '#f8fafc', subtext: '#cbd5e1' };
+  }
+}
+
+function buildAgentThesisDiagram(pick: WeeklyPick): string | null {
+  const sections = getAgentSections(pick);
+  if (sections.length === 0) {
+    return null;
+  }
+
+  const portfolioTone = getSignalTone(pick.signal);
+  const symbol = escapeMermaidLabel(pick.symbol.replace('.NS', ''));
+  const signal = escapeMermaidLabel(pick.signal.toUpperCase());
+  const conviction = escapeMermaidLabel(`${pick.score}% conviction`);
+  const riskScore = escapeMermaidLabel(`Risk ${pick.risk_score}/10`);
+  const lines = [
+    'flowchart LR',
+    '  stock["Screened Stock<br/>' + symbol + '"]:::summary',
+    '  portfolio["Portfolio Decision<br/>' + signal + '<br/>' + conviction + '"]:::' + portfolioTone,
+    '  risk["Risk Review<br/>' + riskScore + '"]:::risk',
+    '  portfolio --> risk',
+  ];
+
+  sections.forEach((section, index) => {
+    const nodeId = `agent${index}`;
+    const tone = getSignalTone(section.signal, section.agent);
+    const agent = escapeMermaidLabel(section.agent || `Agent ${index + 1}`);
+    const sectionSignal = escapeMermaidLabel(section.signal || 'n/a');
+    const confidence = escapeMermaidLabel(formatAgentConfidence(section.confidence));
+    lines.push(`  ${nodeId}["${agent}<br/>${sectionSignal} - ${confidence}"]:::${tone}`);
+    lines.push(`  stock --> ${nodeId}`);
+    lines.push(`  ${nodeId} --> portfolio`);
+  });
+
+  lines.push(
+    '  classDef bullish fill:#064e3b,stroke:#34d399,color:#ecfdf5,stroke-width:2px;',
+    '  classDef bearish fill:#7f1d1d,stroke:#fb7185,color:#fff1f2,stroke-width:2px;',
+    '  classDef neutral fill:#451a03,stroke:#fbbf24,color:#fffbeb,stroke-width:2px;',
+    '  classDef risk fill:#581c87,stroke:#c084fc,color:#faf5ff,stroke-width:2px;',
+    '  classDef summary fill:#083344,stroke:#22d3ee,color:#ecfeff,stroke-width:2px;',
+    '  classDef unknown fill:#1e293b,stroke:#94a3b8,color:#f8fafc,stroke-width:2px;'
+  );
+
+  return lines.join('\n');
+}
+
+function AgentThesisMermaidDiagram({ pick }: { pick: WeeklyPick }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const renderIdRef = useRef(`agent-thesis-${pick.id}-${Math.random().toString(36).slice(2)}`);
+  const diagram = useMemo(() => buildAgentThesisDiagram(pick), [pick]);
+  const hasAgentSections = getAgentSections(pick).length > 0;
+
+  useEffect(() => {
+    if (!diagram || !containerRef.current) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const renderDiagram = async () => {
+      try {
+        const mermaid = (await loadMermaid()).default;
+        if (!isMermaidInitialized) {
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'loose',
+            theme: 'base',
+            flowchart: {
+              curve: 'basis',
+              htmlLabels: true,
+              nodeSpacing: 42,
+              rankSpacing: 58,
+            },
+          });
+          isMermaidInitialized = true;
+        }
+
+        const { svg } = await mermaid.render(`${renderIdRef.current}-${Date.now()}`, diagram);
+        if (!isCancelled && containerRef.current) {
+          containerRef.current.innerHTML = svg;
+        }
+      } catch (err) {
+        console.error('Failed to render thesis Mermaid diagram:', err);
+        if (!isCancelled && containerRef.current) {
+          containerRef.current.innerHTML = '<p class="text-xs text-rose-300">Unable to render agent diagram for this analysis.</p>';
+        }
+      }
+    };
+
+    renderDiagram();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [diagram]);
+
+  if (!hasAgentSections) {
+    return (
+      <div className="rounded-lg border border-ramp-grey-800 bg-ramp-grey-950/70 p-3 text-xs text-gray-400">
+        No structured agent outputs were stored for this pick, so the thesis diagram cannot be generated.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-lg border border-ramp-grey-800 bg-ramp-grey-950 p-3">
+        <div ref={containerRef} className="min-w-[720px] [&_svg]:mx-auto [&_svg]:max-w-none" />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {AGENT_SIGNAL_LEGEND.map((item) => (
+          <span key={item.tone} className="inline-flex items-center gap-1.5 rounded-full border border-ramp-grey-800 bg-ramp-grey-950 px-2 py-1 text-[10px] font-medium text-gray-300">
+            <span className={`h-2 w-2 rounded-full ${item.className}`} />
+            {item.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function WeeklyPicksDashboard() {
   const [models, setModels] = useState<LanguageModel[]>([]);
@@ -125,6 +351,25 @@ export function WeeklyPicksDashboard() {
     if (val === null || val === undefined) return '—';
     return `₹${val.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
   };
+  const formatIntrinsicPrice = (val: number | null | undefined, currency?: string | null) => {
+    if (val === null || val === undefined) return '—';
+    const prefix = currency && currency !== 'INR' ? `${currency} ` : '₹';
+    return `${prefix}${val.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  };
+  const formatMarginOfSafety = (val: number | null | undefined) => {
+    if (val === null || val === undefined) return '—';
+    return `${val >= 0 ? '+' : ''}${(val * 100).toFixed(1)}% MoS`;
+  };
+  const getMarginToneClass = (val: number | null | undefined) => {
+    if (val === null || val === undefined) return 'text-gray-400 bg-gray-500/10 border-gray-500/20';
+    if (val >= 0.25) return 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25';
+    if (val >= 0) return 'text-cyan-300 bg-cyan-500/10 border-cyan-500/25';
+    return 'text-rose-300 bg-rose-500/10 border-rose-500/25';
+  };
+  const formatMethodSource = (method?: string | null, source?: string | null) => {
+    const methodLabel = method ? method.replace(/_/g, ' ') : 'method n/a';
+    return source ? `${methodLabel} · ${source}` : methodLabel;
+  };
 
   // Fetch stocks list to display names inside watchlist
   useEffect(() => {
@@ -183,6 +428,8 @@ export function WeeklyPicksDashboard() {
   const selectedDateRef = useRef(selectedDate);
   const [picks, setPicks] = useState<WeeklyPick[]>([]);
   const [selectedAnalysis, setSelectedAnalysis] = useState<WeeklyPick | null>(null);
+  const [analysisPrices, setAnalysisPrices] = useState<StockPricePoint[]>([]);
+  const [analysisPricesLoading, setAnalysisPricesLoading] = useState(false);
   const [loadingPicks, setLoadingPicks] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<'png' | 'pdf' | null>(null);
   const [exportingSingleFormat, setExportingSingleFormat] = useState<'png' | 'pdf' | null>(null);
@@ -201,6 +448,112 @@ export function WeeklyPicksDashboard() {
   useEffect(() => {
     selectedDateRef.current = selectedDate;
   }, [selectedDate]);
+
+  useEffect(() => {
+    if (!selectedAnalysis) {
+      setAnalysisPrices([]);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const fetchAnalysisPrices = async () => {
+      try {
+        setAnalysisPricesLoading(true);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8008'}/stocks/${selectedAnalysis.symbol}/prices`);
+        if (!res.ok) {
+          throw new Error('Failed to fetch analysis price history');
+        }
+        const data = await res.json();
+        if (!isCancelled) {
+          setAnalysisPrices(data);
+        }
+      } catch (err) {
+        console.error('Error fetching analysis stock prices:', err);
+        if (!isCancelled) {
+          setAnalysisPrices([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setAnalysisPricesLoading(false);
+        }
+      }
+    };
+
+    fetchAnalysisPrices();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedAnalysis]);
+
+  const historicalPriceComparisons = useMemo<HistoricalPriceComparison[]>(() => {
+    if (!selectedAnalysis) {
+      return [];
+    }
+
+    if (analysisPrices.length === 0) {
+      return [];
+    }
+
+    const latestPricePoint = analysisPrices[analysisPrices.length - 1];
+    const currentPrice = selectedAnalysis.current_price ?? latestPricePoint?.close;
+    const currentDateValue = (selectedAnalysis.current_date || latestPricePoint?.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+
+    if (!currentPrice || currentPrice <= 0 || !currentDateValue) {
+      return [];
+    }
+
+    const currentDate = new Date(`${currentDateValue}T00:00:00`);
+    if (Number.isNaN(currentDate.getTime())) {
+      return [];
+    }
+
+    const getTargetDate = (amount: number, unit: 'month' | 'week') => {
+      const target = new Date(currentDate);
+      if (unit === 'month') {
+        target.setMonth(target.getMonth() - amount);
+      } else {
+        target.setDate(target.getDate() - amount * 7);
+      }
+      return target;
+    };
+
+    const formatDateValue = (date: Date) => date.toISOString().slice(0, 10);
+
+    const findNearestPriceOnOrBefore = (targetDate: Date) => {
+      const targetTime = targetDate.getTime();
+      for (let idx = analysisPrices.length - 1; idx >= 0; idx -= 1) {
+        const point = analysisPrices[idx];
+        const pointTime = new Date(`${point.date}T00:00:00`).getTime();
+        if (!Number.isNaN(pointTime) && pointTime <= targetTime) {
+          return point;
+        }
+      }
+      return undefined;
+    };
+
+    return [
+      { label: '3 months ago', amount: 3, unit: 'month' as const },
+      { label: '2 months ago', amount: 2, unit: 'month' as const },
+      { label: '1 month ago', amount: 1, unit: 'month' as const },
+      { label: '3 weeks ago', amount: 3, unit: 'week' as const },
+      { label: '2 weeks ago', amount: 2, unit: 'week' as const },
+      { label: '1 week ago', amount: 1, unit: 'week' as const },
+    ].map(({ label, amount, unit }) => {
+      const targetDate = getTargetDate(amount, unit);
+      const pricePoint = findNearestPriceOnOrBefore(targetDate);
+      const percentFromThen = pricePoint?.close ? ((currentPrice - pricePoint.close) / pricePoint.close) * 100 : undefined;
+
+      return {
+        label,
+        targetDate: formatDateValue(targetDate),
+        actualDate: pricePoint?.date,
+        price: pricePoint?.close,
+        percentFromThen,
+      };
+    });
+  }, [analysisPrices, selectedAnalysis]);
 
   const fetchDates = useCallback(async (wlName: string = selectedWatchlistRef.current) => {
     try {
@@ -291,8 +644,8 @@ export function WeeklyPicksDashboard() {
       setIsTriggering(true);
       setError(null);
       await api.runWeeklyPipeline(
-        selectedModel?.model_name || 'gemini-2.0-flash',
-        selectedModel?.provider || 'Gemini',
+        selectedModel?.model_name || DEFAULT_MODEL_NAME,
+        selectedModel?.provider || 'OpenRouter',
         testMode,
         selectedWatchlist
       );
@@ -737,6 +1090,7 @@ export function WeeklyPicksDashboard() {
     try {
       setExportingSingleFormat('pdf');
       const { sections } = parseThesis(pick.thesis);
+      const intrinsic = getIntrinsicValue(pick);
       
       const symbolClean = pick.symbol.replace('.NS', '');
       const title = `${symbolClean} Analysis Report`;
@@ -749,6 +1103,9 @@ export function WeeklyPicksDashboard() {
         `Analysis Date: ${pick.analysis_date || '—'} at ${formatPrice(pick.analysis_price)}`,
         `Current Date: ${pick.current_date || '—'} at ${formatPrice(pick.current_price)}`,
         `Price Move: ${formatPercent(pick.price_change_pct)}`,
+        `Intrinsic Value: ${formatIntrinsicPrice(intrinsic?.intrinsic_value_per_share, intrinsic?.currency)}`,
+        `Margin of Safety: ${formatMarginOfSafety(intrinsic?.margin_of_safety)}`,
+        `Intrinsic Method: ${formatMethodSource(intrinsic?.method, intrinsic?.source)}`,
         `Exported: ${new Date().toLocaleString('en-IN')}`,
         '',
         '--- THESIS BREAKDOWN ---',
@@ -778,6 +1135,10 @@ export function WeeklyPicksDashboard() {
       setExportingSingleFormat('png');
       const symbolClean = pick.symbol.replace('.NS', '');
       const { sections } = parseThesis(pick.thesis);
+      const agentSections = getAgentSections(pick);
+      const intrinsic = getIntrinsicValue(pick);
+      const agentRows = Math.max(1, Math.ceil(agentSections.length / 3));
+      const mapHeight = agentSections.length > 0 ? 160 + agentRows * 96 : 88;
 
       // Create a temporary canvas context for text measurement
       const tempCanvas = document.createElement('canvas');
@@ -804,7 +1165,7 @@ export function WeeklyPicksDashboard() {
       });
 
       // Final canvas specifications
-      const contentHeight = Math.max(leftHeight, 300);
+      const contentHeight = Math.max(mapHeight + leftHeight + 48, 430);
       const headerHeight = 170;
       const metricsHeight = 120;
       const footerHeight = 80;
@@ -903,7 +1264,7 @@ export function WeeklyPicksDashboard() {
       // --- 2. METRICS CARDS SECTION ---
       const cardStartY = 160;
       const gap = 20;
-      const cardW = (width - margin * 2 - gap * 3) / 4;
+      const cardW = (width - margin * 2 - gap * 4) / 5;
       const cardH = 86;
 
       const metrics = [
@@ -915,7 +1276,13 @@ export function WeeklyPicksDashboard() {
           val: formatPercent(pick.price_change_pct), 
           sub: 'Analysis vs current', 
           color: (pick.price_change_pct || 0) >= 0 ? '#10b981' : '#ef4444' 
-        }
+        },
+        {
+          label: 'INTRINSIC VALUE',
+          val: formatMarginOfSafety(intrinsic?.margin_of_safety),
+          sub: formatIntrinsicPrice(intrinsic?.intrinsic_value_per_share, intrinsic?.currency),
+          color: (intrinsic?.margin_of_safety || 0) >= 0 ? '#10b981' : '#ef4444'
+        },
       ];
 
       metrics.forEach((m, idx) => {
@@ -946,9 +1313,152 @@ export function WeeklyPicksDashboard() {
 
       // --- 3. SINGLE COLUMN CONTENT SECTION ---
       const contentStartY = cardStartY + cardH + 35;
+      const drawArrow = (fromX: number, fromY: number, toX: number, toY: number) => {
+        const angle = Math.atan2(toY - fromY, toX - fromX);
+        const headLength = 9;
+
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.55)';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.lineTo(toX, toY);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.75)';
+        ctx.beginPath();
+        ctx.moveTo(toX, toY);
+        ctx.lineTo(
+          toX - headLength * Math.cos(angle - Math.PI / 6),
+          toY - headLength * Math.sin(angle - Math.PI / 6)
+        );
+        ctx.lineTo(
+          toX - headLength * Math.cos(angle + Math.PI / 6),
+          toY - headLength * Math.sin(angle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fill();
+      };
+
+      const drawMapNode = (
+        x: number,
+        y: number,
+        nodeW: number,
+        nodeH: number,
+        title: string,
+        subtitle: string,
+        tone: AgentSignalTone
+      ) => {
+        const colors = getCanvasToneColors(tone);
+        ctx.fillStyle = colors.fill;
+        ctx.strokeStyle = colors.stroke;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.roundRect(x, y, nodeW, nodeH, 12);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = colors.text;
+        ctx.font = '700 12px Inter, Arial, sans-serif';
+        const titleLines = wrapCanvasText(ctx, title, nodeW - 24).slice(0, 2);
+        titleLines.forEach((line, index) => {
+          ctx.fillText(line, x + 12, y + 22 + index * 15);
+        });
+
+        ctx.fillStyle = colors.subtext;
+        ctx.font = '600 10px Inter, Arial, sans-serif';
+        ctx.fillText(subtitle.slice(0, 36), x + 12, y + nodeH - 14);
+      };
+
+      // --- Agent Thesis Map ---
+      let currentY = contentStartY;
+      ctx.fillStyle = '#22d3ee';
+      ctx.font = '700 15px Inter, Arial, sans-serif';
+      ctx.fillText('AGENT THESIS MAP', margin, currentY);
+      currentY += 22;
+
+      const mapY = currentY;
+      ctx.fillStyle = '#101722';
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(margin, mapY, colW, mapHeight - 18, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      if (agentSections.length > 0) {
+        const stockW = 160;
+        const summaryW = 178;
+        const nodeH = 64;
+        const agentW = 210;
+        const agentGapX = 18;
+        const agentGapY = 32;
+        const stockX = margin + 24;
+        const stockY = mapY + 40 + Math.max(0, agentRows - 1) * 48;
+        const portfolioX = width - margin - summaryW - 24;
+        const portfolioY = stockY;
+        const riskY = portfolioY + 88;
+        const agentAreaX = stockX + stockW + 56;
+        const agentAreaW = portfolioX - agentAreaX - 56;
+        const columns = Math.min(3, agentSections.length);
+        const colWidth = columns > 1 ? (agentAreaW - agentGapX * (columns - 1)) / columns : agentAreaW;
+        const actualAgentW = Math.min(agentW, colWidth);
+
+        drawMapNode(stockX, stockY, stockW, nodeH, 'Screened Stock', symbolClean, 'summary');
+        drawMapNode(
+          portfolioX,
+          portfolioY,
+          summaryW,
+          nodeH,
+          'Portfolio Decision',
+          `${pick.signal.toUpperCase()} - ${pick.score}%`,
+          getSignalTone(pick.signal)
+        );
+        drawMapNode(portfolioX, riskY, summaryW, nodeH, 'Risk Review', `${pick.risk_score}/10`, 'risk');
+        drawArrow(portfolioX + summaryW / 2, portfolioY + nodeH, portfolioX + summaryW / 2, riskY);
+
+        agentSections.forEach((section, index) => {
+          const col = index % columns;
+          const row = Math.floor(index / columns);
+          const x = agentAreaX + col * (actualAgentW + agentGapX);
+          const y = mapY + 36 + row * (nodeH + agentGapY);
+          const tone = getSignalTone(section.signal, section.agent);
+          const confidence = formatAgentConfidence(section.confidence);
+
+          drawMapNode(
+            x,
+            y,
+            actualAgentW,
+            nodeH,
+            section.agent || `Agent ${index + 1}`,
+            `${section.signal || 'n/a'} - ${confidence}`,
+            tone
+          );
+          drawArrow(stockX + stockW, stockY + nodeH / 2, x, y + nodeH / 2);
+          drawArrow(x + actualAgentW, y + nodeH / 2, portfolioX, portfolioY + nodeH / 2);
+        });
+
+        const legendY = mapY + mapHeight - 42;
+        let legendX = margin + 24;
+        AGENT_SIGNAL_LEGEND.forEach((item) => {
+          const colors = getCanvasToneColors(item.tone);
+          ctx.fillStyle = colors.stroke;
+          ctx.beginPath();
+          ctx.arc(legendX + 5, legendY - 4, 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '600 10px Inter, Arial, sans-serif';
+          ctx.fillText(item.label.toUpperCase(), legendX + 15, legendY);
+          legendX += ctx.measureText(item.label.toUpperCase()).width + 42;
+        });
+      } else {
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '500 13px Inter, Arial, sans-serif';
+        ctx.fillText('No structured agent outputs were stored for this pick.', margin + 24, mapY + 44);
+      }
+
+      currentY = contentStartY + mapHeight + 20;
 
       // --- Thesis Breakdown ---
-      let currentY = contentStartY;
       ctx.fillStyle = '#22d3ee';
       ctx.font = '700 15px Inter, Arial, sans-serif';
       ctx.fillText('THESIS BREAKDOWN', margin, currentY);
@@ -1394,6 +1904,8 @@ export function WeeklyPicksDashboard() {
                         const riskColor = pick.risk_score <= 3 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
                                            pick.risk_score <= 6 ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' :
                                            'text-rose-400 bg-rose-500/10 border-rose-500/20';
+                        const intrinsic = getIntrinsicValue(pick);
+                        const mosClass = getMarginToneClass(intrinsic?.margin_of_safety);
 
                         return (
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
@@ -1478,28 +1990,30 @@ export function WeeklyPicksDashboard() {
                               </div>
                             </div>
 
-                            {/* Panel 4: Company Profile */}
+                            {/* Panel 4: Intrinsic Value */}
                             <div className="bg-ramp-grey-950/60 hover:bg-ramp-grey-950/80 border border-ramp-grey-800/40 p-3 rounded-lg flex flex-col justify-between shadow-inner hover:border-cyan-500/20 transition-all duration-300">
                               <div className="flex flex-col gap-1.5 min-w-0">
-                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Company Profile</span>
+                                <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Intrinsic Value</span>
                                 <div className="space-y-1 min-w-0">
                                   <div className="flex justify-between text-xs min-w-0 gap-2">
-                                    <span className="text-gray-500 shrink-0">Market Cap</span>
+                                    <span className="text-gray-500 shrink-0">Fair Value</span>
                                     <span className="font-bold text-gray-200 truncate">
-                                      {stockDetail ? formatMarketCap(stockDetail.fundamentals?.market_cap) : '—'}
+                                      {formatIntrinsicPrice(intrinsic?.intrinsic_value_per_share, intrinsic?.currency)}
                                     </span>
                                   </div>
                                   <div className="flex justify-between text-xs min-w-0 gap-2">
-                                    <span className="text-gray-500 shrink-0">Sector</span>
-                                    <span className="font-bold text-gray-200 truncate" title={stockDetail?.sector || '—'}>
-                                      {stockDetail?.sector || '—'}
+                                    <span className="text-gray-500 shrink-0">Method</span>
+                                    <span className="font-bold text-gray-200 truncate" title={formatMethodSource(intrinsic?.method, intrinsic?.source)}>
+                                      {intrinsic?.method ? intrinsic.method.replace(/_/g, ' ') : '—'}
                                     </span>
                                   </div>
                                 </div>
                               </div>
-                              <div className="mt-2 pt-1.5 border-t border-ramp-grey-800/40 flex items-center justify-between text-[9px] text-gray-500">
-                                <span>Risk Profile</span>
-                                <span className="text-gray-300 capitalize">{pick.risk_score <= 3 ? 'Conservative' : pick.risk_score <= 6 ? 'Balanced' : 'Aggressive'}</span>
+                              <div className="mt-2 pt-1.5 border-t border-ramp-grey-800/40 flex items-center justify-between">
+                                <span className="text-[9px] text-gray-500">Margin</span>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${mosClass}`}>
+                                  {formatMarginOfSafety(intrinsic?.margin_of_safety)}
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -1704,7 +2218,7 @@ export function WeeklyPicksDashboard() {
       </div>
 
       <Dialog open={!!selectedAnalysis} onOpenChange={(open) => !open && setSelectedAnalysis(null)}>
-        <DialogContent className="max-w-5xl max-h-[86vh] overflow-hidden bg-ramp-grey-900 border-ramp-grey-800 text-white">
+        <DialogContent className="max-w-5xl max-h-[86vh] overflow-y-auto bg-ramp-grey-900 border-ramp-grey-800 text-white">
           {selectedAnalysis && (
             <>
               <DialogHeader className="flex flex-row items-center justify-between gap-4">
@@ -1745,7 +2259,7 @@ export function WeeklyPicksDashboard() {
                 </div>
               </DialogHeader>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
                 <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
                   <span className="text-[10px] text-gray-500 uppercase font-semibold">Analysis Price</span>
                   <p className="text-sm font-bold text-gray-100 mt-1">{formatPrice(selectedAnalysis.analysis_price)}</p>
@@ -1768,16 +2282,78 @@ export function WeeklyPicksDashboard() {
                   </p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Analysis price vs current</p>
                 </div>
+                <div className="bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3">
+                  <span className="text-[10px] text-gray-500 uppercase font-semibold">Intrinsic Value</span>
+                  <p className="text-sm font-bold text-gray-100 mt-1">
+                    {formatIntrinsicPrice(getIntrinsicValue(selectedAnalysis)?.intrinsic_value_per_share, getIntrinsicValue(selectedAnalysis)?.currency)}
+                  </p>
+                  <p className={`inline-flex mt-1 rounded border px-1.5 py-0.5 text-[10px] font-bold ${getMarginToneClass(getIntrinsicValue(selectedAnalysis)?.margin_of_safety)}`}>
+                    {formatMarginOfSafety(getIntrinsicValue(selectedAnalysis)?.margin_of_safety)}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-1 truncate" title={formatMethodSource(getIntrinsicValue(selectedAnalysis)?.method, getIntrinsicValue(selectedAnalysis)?.source)}>
+                    {formatMethodSource(getIntrinsicValue(selectedAnalysis)?.method, getIntrinsicValue(selectedAnalysis)?.source)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-ramp-grey-800 bg-ramp-grey-950/70 p-3">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-xs uppercase tracking-wider text-cyan-300 font-semibold">Historical Price vs Current</h3>
+                  <span className="text-[10px] text-gray-500">
+                    Current reference: {formatPrice(selectedAnalysis.current_price ?? analysisPrices[analysisPrices.length - 1]?.close)}
+                  </span>
+                </div>
+                {analysisPricesLoading && (
+                  <div className="flex items-center gap-2 py-3 text-xs text-gray-400">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-400" />
+                    Loading historical prices...
+                  </div>
+                )}
+                {!analysisPricesLoading && historicalPriceComparisons.length === 0 && (
+                  <p className="py-3 text-xs text-gray-500">Historical price checkpoints are not available for this stock.</p>
+                )}
+                {!analysisPricesLoading && historicalPriceComparisons.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                    {historicalPriceComparisons.map((item) => {
+                      const isGain = (item.percentFromThen ?? 0) >= 0;
+                      return (
+                        <div key={item.label} className="rounded-md border border-ramp-grey-800 bg-ramp-grey-1000 px-3 py-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{item.label}</p>
+                              <p className="mt-1 text-sm font-bold text-gray-100">{formatPrice(item.price)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className={`text-sm font-bold ${isGain ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {formatPercent(item.percentFromThen)}
+                              </p>
+                              <p className="text-[9px] uppercase tracking-wider text-gray-600">to current</p>
+                            </div>
+                          </div>
+                          <p className="mt-1 text-[10px] text-gray-500">
+                            {item.actualDate ? `${item.actualDate}${item.actualDate !== item.targetDate ? ` near ${item.targetDate}` : ''}` : `No price near ${item.targetDate}`}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
                 <div className="min-h-0">
                   <h3 className="text-xs uppercase tracking-wider text-cyan-300 font-semibold mb-2 flex items-center gap-2">
                     <Sparkles className="h-3.5 w-3.5" />
-                    Thesis Breakdown
+                    Agent Thesis Map
                   </h3>
-                  <div className="max-h-[46vh] overflow-y-auto bg-ramp-grey-950 border border-ramp-grey-800 rounded-lg p-3 text-xs text-gray-300 leading-relaxed scrollbar-thin scrollbar-thumb-ramp-grey-800">
-                    {renderThesisSections(selectedAnalysis)}
+                  <div className="max-h-[46vh] overflow-y-auto space-y-4 rounded-lg border border-ramp-grey-800 bg-ramp-grey-950/70 p-3 text-xs text-gray-300 leading-relaxed scrollbar-thin scrollbar-thumb-ramp-grey-800">
+                    <AgentThesisMermaidDiagram pick={selectedAnalysis} />
+                    <div>
+                      <h4 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                        Thesis Breakdown
+                      </h4>
+                      {renderThesisSections(selectedAnalysis)}
+                    </div>
                   </div>
                 </div>
                 <div className="min-h-0">

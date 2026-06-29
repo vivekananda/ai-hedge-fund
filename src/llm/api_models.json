@@ -10,6 +10,16 @@
     "provider": "Anthropic"
   },
   {
+    "display_name": "[openrouter] Qwen3.7 Plus (budget)",
+    "model_name": "qwen/qwen3.7-plus",
+    "provider": "OpenRouter"
+  },
+  {
+    "display_name": "[openrouter] custom",
+    "model_name": "-",
+    "provider": "OpenRouter"
+  },
+  {
     "display_name": "Grok 4.3",
     "model_name": "grok-4.3",
     "provider": "xAI"

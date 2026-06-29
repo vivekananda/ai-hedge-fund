@@ -27,7 +27,23 @@ export interface WeeklyPick {
   current_date?: string | null;
   current_price?: number | null;
   price_change_pct?: number | null;
-  analysis_details?: Record<string, any> | null;
+  analysis_details?: {
+    intrinsic_value?: {
+      intrinsic_value_per_share?: number | null;
+      current_price?: number | null;
+      margin_of_safety?: number | null;
+      method?: string | null;
+      source?: string | null;
+      currency?: string | null;
+      signal?: string | null;
+      confidence?: number | null;
+      assumptions?: Record<string, any>;
+      metrics?: Record<string, any>;
+      details?: string;
+    } | null;
+    agent_sections?: any[];
+    [key: string]: any;
+  } | null;
 }
 
 export interface WeeklyRun {

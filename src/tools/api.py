@@ -19,6 +19,7 @@ from src.data.models import (
     CompanyFactsResponse,
     FinancialMetrics,
     FinancialMetricsResponse,
+    IntrinsicValueEstimate,
     Price,
     PriceResponse,
     LineItem,
@@ -192,6 +193,7 @@ def get_financial_metrics(
                     debt_to_equity = debt_to_equity / 100.0 # Convert 100% to 1.0
             except Exception as e:
                 print(f"Error fetching info from yfinance for {formatted_ticker}: {e}")
+                raise Exception(f"Failed to fetch financial metrics via yfinance for {formatted_ticker}: {e}") from e
 
         # Construct FinancialMetrics models.
         metrics_list = []
@@ -212,8 +214,8 @@ def get_financial_metrics(
                 free_cash_flow_yield=None,
                 peg_ratio=None,
                 gross_margin=None,
-                operating_margin=0.15 * factor,
-                net_margin=0.10 * factor,
+                operating_margin=None,
+                net_margin=None,
                 return_on_equity=roe * factor if roe else None,
                 return_on_assets=None,
                 return_on_invested_capital=roce * factor if roce else None,
@@ -223,16 +225,16 @@ def get_financial_metrics(
                 days_sales_outstanding=None,
                 operating_cycle=None,
                 working_capital_turnover=None,
-                current_ratio=1.5,
-                quick_ratio=1.0,
-                cash_ratio=0.5,
+                current_ratio=None,
+                quick_ratio=None,
+                cash_ratio=None,
                 operating_cash_flow_ratio=None,
                 debt_to_equity=debt_to_equity,
                 debt_to_assets=None,
                 interest_coverage=None,
                 revenue_growth=sales_growth,
                 earnings_growth=sales_growth,
-                book_value_growth=0.10,
+                book_value_growth=None,
                 earnings_per_share_growth=None,
                 free_cash_flow_growth=None,
                 operating_income_growth=None,
@@ -289,7 +291,7 @@ def search_line_items(
         financials = t_obj.financials
         balance_sheet = t_obj.balance_sheet
         
-        # If statements are empty, return default mock list to avoid blocking the agent
+        # If statements are empty, raise an error to avoid creating mock data
         if cashflow.empty or financials.empty or balance_sheet.empty:
             raise Exception("yfinance financial statements are empty")
 
@@ -369,37 +371,8 @@ def search_line_items(
         return results
 
     except Exception as e:
-        print(f"Error fetching line items via yfinance for {formatted_ticker}: {e}. Generating mock data.")
-        # Generate safe mock data to keep Valuation Agent functioning
-        db = SessionLocal()
-        snap = get_fundamentals(db, formatted_ticker)
-        db.close()
-        
-        mcap = (snap.market_cap if snap else 1000.0) * 1e7 # convert Cr to INR
-        net_inc = mcap * 0.08 # mock 8% net margin
-        fcf = net_inc * 0.90
-        
-        results = []
-        for i in range(2):
-            date_str = (datetime.datetime.now() - datetime.timedelta(days=i*365)).strftime("%Y-%m-%d")
-            li = LineItem(
-                ticker=formatted_ticker,
-                report_period=date_str,
-                period="annual",
-                currency="INR",
-                free_cash_flow=fcf,
-                net_income=net_inc,
-                depreciation_and_amortization=net_inc * 0.15,
-                capital_expenditure=net_inc * 0.20,
-                working_capital=mcap * 0.10 + (i * 1e7),
-                outstanding_shares=1e7,
-                total_assets=mcap * 0.8,
-                total_liabilities=mcap * 0.3,
-                dividends_and_other_cash_distributions=-net_inc * 0.2,
-                issuance_or_purchase_of_equity_shares=0.0
-            )
-            results.append(li)
-        return results
+        print(f"Error fetching line items via yfinance for {formatted_ticker}: {e}")
+        raise Exception(f"Failed to fetch line items via yfinance for {formatted_ticker}: {e}") from e
 
 
 def get_insider_trades(
@@ -578,6 +551,199 @@ def get_market_cap(
         return None
     finally:
         db.close()
+
+
+def _safe_float(value) -> float | None:
+    """Convert finite numeric values from crawler payloads to floats."""
+    try:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            value = value.get("raw") or value.get("fmt")
+        result = float(value)
+        if pd.isna(result):
+            return None
+        return result
+    except (TypeError, ValueError):
+        return None
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(value, high))
+
+
+def _calculate_dcf_per_share(
+    base_cash_flow_per_share: float,
+    growth_rate: float,
+    discount_rate: float = 0.12,
+    terminal_growth_rate: float = 0.03,
+    years: int = 10,
+) -> float | None:
+    """Estimate intrinsic value per share from a conservative DCF."""
+    if base_cash_flow_per_share <= 0 or discount_rate <= terminal_growth_rate:
+        return None
+
+    value = 0.0
+    cash_flow = base_cash_flow_per_share
+    for year in range(1, years + 1):
+        cash_flow *= 1 + growth_rate
+        value += cash_flow / ((1 + discount_rate) ** year)
+
+    terminal_cash_flow = cash_flow * (1 + terminal_growth_rate)
+    terminal_value = terminal_cash_flow / (discount_rate - terminal_growth_rate)
+    value += terminal_value / ((1 + discount_rate) ** years)
+    return value
+
+
+def get_intrinsic_value(
+    ticker: str,
+    end_date: str,
+    api_key: str = None,
+) -> IntrinsicValueEstimate | None:
+    """Fetch or estimate intrinsic value per share for a ticker.
+
+    The crawler first checks yfinance/Yahoo fields that may expose fair value.
+    If those are unavailable, it estimates intrinsic value from local/API
+    financial metrics and line items using a conservative per-share DCF.
+    """
+    formatted_ticker = clean_ticker(ticker)
+    current_price = None
+    currency = None
+
+    try:
+        t_obj = yf.Ticker(formatted_ticker)
+        info = t_obj.info or {}
+        currency = info.get("currency")
+        current_price = _safe_float(
+            info.get("currentPrice")
+            or info.get("regularMarketPrice")
+            or info.get("previousClose")
+        )
+
+        for field in ("fairValue", "fairValueEstimate", "intrinsicValue"):
+            reported_value = _safe_float(info.get(field))
+            if reported_value and reported_value > 0:
+                return IntrinsicValueEstimate(
+                    ticker=formatted_ticker,
+                    intrinsic_value_per_share=reported_value,
+                    current_price=current_price,
+                    margin_of_safety=((reported_value - current_price) / current_price) if current_price else None,
+                    currency=currency,
+                    source="yfinance",
+                    method=f"reported_{field}",
+                    assumptions={"note": "Reported fair/intrinsic value field from Yahoo/yfinance when available."},
+                    metrics={"field": field},
+                )
+    except Exception as e:
+        logger.warning("Failed to crawl reported intrinsic value for %s: %s. Falling back to estimate.", ticker, e)
+
+    try:
+        metrics = get_financial_metrics(
+            ticker=formatted_ticker,
+            end_date=end_date,
+            period="ttm",
+            limit=5,
+            api_key=api_key,
+        )
+        line_items = search_line_items(
+            ticker=formatted_ticker,
+            line_items=[
+                "free_cash_flow",
+                "net_income",
+                "outstanding_shares",
+                "book_value_per_share",
+                "earnings_per_share",
+            ],
+            end_date=end_date,
+            period="ttm",
+            limit=5,
+            api_key=api_key,
+        )
+    except Exception as e:
+        logger.warning("Failed to fetch inputs for intrinsic value estimate for %s: %s.", ticker, e)
+        return None
+
+    if not metrics and not line_items:
+        return None
+
+    recent_metrics = metrics[0] if metrics else None
+    recent_line_item = line_items[0] if line_items else None
+    shares = _safe_float(getattr(recent_line_item, "outstanding_shares", None)) if recent_line_item else None
+    free_cash_flow = _safe_float(getattr(recent_line_item, "free_cash_flow", None)) if recent_line_item else None
+    fcf_per_share = _safe_float(getattr(recent_metrics, "free_cash_flow_per_share", None)) if recent_metrics else None
+    eps = _safe_float(getattr(recent_metrics, "earnings_per_share", None)) if recent_metrics else None
+    book_value_per_share = _safe_float(getattr(recent_metrics, "book_value_per_share", None)) if recent_metrics else None
+
+    if not fcf_per_share and free_cash_flow and shares and shares > 0:
+        fcf_per_share = free_cash_flow / shares
+    if not eps and recent_line_item:
+        eps = _safe_float(getattr(recent_line_item, "earnings_per_share", None))
+    if not book_value_per_share and recent_line_item:
+        book_value_per_share = _safe_float(getattr(recent_line_item, "book_value_per_share", None))
+
+    growth_candidates = []
+    if recent_metrics:
+        for value in (
+            recent_metrics.free_cash_flow_growth,
+            recent_metrics.earnings_growth,
+            recent_metrics.revenue_growth,
+            recent_metrics.book_value_growth,
+        ):
+            numeric = _safe_float(value)
+            if numeric is not None:
+                growth_candidates.append(numeric)
+    growth_rate = _clamp(sum(growth_candidates) / len(growth_candidates), -0.05, 0.12) if growth_candidates else 0.04
+
+    method = "discounted_cash_flow"
+    base_cash_flow = fcf_per_share
+    intrinsic_value = _calculate_dcf_per_share(base_cash_flow, growth_rate) if base_cash_flow else None
+
+    if intrinsic_value is None and eps and eps > 0:
+        method = "earnings_power_value"
+        normalized_pe = 12 + max(growth_rate, 0) * 100
+        intrinsic_value = eps * _clamp(normalized_pe, 8, 24)
+
+    if intrinsic_value is None and book_value_per_share and book_value_per_share > 0:
+        method = "book_value_floor"
+        roe = _safe_float(getattr(recent_metrics, "return_on_equity", None)) if recent_metrics else None
+        quality_multiple = 1.0 + _clamp((roe or 0.10) - 0.10, -0.25, 0.75)
+        intrinsic_value = book_value_per_share * quality_multiple
+
+    if intrinsic_value is None:
+        return None
+
+    if current_price is None:
+        try:
+            price_start_date = (
+                datetime.datetime.strptime(end_date, "%Y-%m-%d") - datetime.timedelta(days=7)
+            ).strftime("%Y-%m-%d")
+            prices = get_prices(formatted_ticker, start_date=price_start_date, end_date=end_date, api_key=api_key)
+            if prices:
+                current_price = prices[-1].close
+        except Exception:
+            current_price = None
+
+    return IntrinsicValueEstimate(
+        ticker=formatted_ticker,
+        intrinsic_value_per_share=intrinsic_value,
+        current_price=current_price,
+        margin_of_safety=((intrinsic_value - current_price) / current_price) if current_price else None,
+        currency=currency or (recent_metrics.currency if recent_metrics else None),
+        source="estimated",
+        method=method,
+        assumptions={
+            "growth_rate": growth_rate,
+            "discount_rate": 0.12,
+            "terminal_growth_rate": 0.03,
+            "years": 10,
+        },
+        metrics={
+            "free_cash_flow_per_share": fcf_per_share,
+            "earnings_per_share": eps,
+            "book_value_per_share": book_value_per_share,
+            "shares_outstanding": shares,
+        },
+    )
 
 
 def prices_to_df(prices: list[Price]) -> pd.DataFrame:
