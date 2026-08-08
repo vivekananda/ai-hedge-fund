@@ -55,6 +55,47 @@ def _safe_float(value, default: float = 0.0) -> float:
         return default
 
 
+def _complete_candidate_decisions(
+    candidate_symbols: list[str], decisions: dict | None, batch_errors: dict[str, str] | None = None
+) -> tuple[dict[str, dict], list[str]]:
+    """Keep every screened candidate when an agent batch returns partial output.
+
+    The portfolio-manager response is an LLM-generated dictionary, so it can omit
+    individual symbols even when the batch itself succeeds. A failed batch has the
+    same outcome. Those symbols must still be persisted and shown as analysis
+    errors rather than silently disappearing or receiving a synthetic HOLD signal.
+    """
+    complete_decisions: dict[str, dict] = {}
+    missing_symbols: list[str] = []
+    decisions = decisions if isinstance(decisions, dict) else {}
+    batch_errors = batch_errors or {}
+
+    for symbol in candidate_symbols:
+        decision = decisions.get(symbol)
+        if isinstance(decision, dict):
+            complete_decisions[symbol] = decision
+            continue
+
+        missing_symbols.append(symbol)
+        error_message = batch_errors.get(
+            symbol, "The portfolio manager returned no decision for this symbol."
+        )
+        complete_decisions[symbol] = {
+            "action": "error",
+            "confidence": 0.0,
+            "risk_score": 0.0,
+            "reasoning": error_message,
+            "thesis": f"Analysis error: {error_message}",
+            "analysis_error": {
+                "message": error_message,
+                "stage": "qualitative analysis",
+                "retryable": True,
+            },
+        }
+
+    return complete_decisions, missing_symbols
+
+
 def _format_pct(value) -> str:
     return f"{_safe_float(value):.1f}%"
 
@@ -536,6 +577,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
         batch_size = 5
         all_decisions = {}
         all_analyst_signals = {}
+        batch_errors = {}
         
         # Setup mock portfolio for the agents to analyze
         mock_portfolio = {
@@ -580,11 +622,23 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                         all_analyst_signals.setdefault(agent_name, {}).update(signals or {})
             except Exception as e:
                 print(f"Error running agents for batch {batch}: {e}")
+                batch_errors.update({symbol: str(e) for symbol in batch})
+
+        all_decisions, missing_decision_symbols = _complete_candidate_decisions(
+            candidate_symbols, all_decisions, batch_errors
+        )
+        if missing_decision_symbols:
+            print(
+                "Qualitative output was unavailable for "
+                f"{len(missing_decision_symbols)} symbol(s); saving analysis errors: "
+                f"{', '.join(missing_decision_symbols)}"
+            )
                 
         # 4. Filter and select the final Top 50 Picks
         # Sort based on action = "buy" first, then confidence descending, then risk_score ascending
         ranked_picks = []
-        for symbol, dec in all_decisions.items():
+        for symbol in candidate_symbols:
+            dec = all_decisions[symbol]
             action = dec.get("action", "hold")
             confidence = dec.get("confidence", 0.0)
             risk_score = dec.get("risk_score", 5.0)
@@ -605,6 +659,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                 "risk_score": risk_score,
                 "reasoning": reasoning,
                 "thesis": thesis,
+                "analysis_error": dec.get("analysis_error"),
                 "action_rank": action_rank
             })
             
@@ -618,7 +673,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
 
         candidate_lookup = {candidate["symbol"]: candidate for candidate in top_candidates}
         qualitative_reviews = _generate_weekly_pick_reviews(
-            picks=final_top_50,
+            picks=[pick for pick in final_top_50 if not pick.get("analysis_error")],
             candidate_lookup=candidate_lookup,
             analyst_signals=all_analyst_signals,
             model_name=model_name,
@@ -660,6 +715,7 @@ def run_weekly_pipeline(model_name: str = "gemini-2.0-flash", model_provider: st
                     "risk_score": pick.get("risk_score"),
                     "reasoning": pick.get("reasoning"),
                 },
+                "analysis_error": pick.get("analysis_error"),
                 "screen_metrics": candidate,
                 "intrinsic_value": _extract_intrinsic_value(symbol, all_analyst_signals),
                 "agent_sections": _detailed_agent_sections(symbol, all_analyst_signals),

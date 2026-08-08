@@ -42,6 +42,11 @@ export interface WeeklyPick {
       details?: string;
     } | null;
     agent_sections?: any[];
+    analysis_error?: {
+      message: string;
+      stage?: string;
+      retryable?: boolean;
+    } | null;
     [key: string]: any;
   } | null;
 }

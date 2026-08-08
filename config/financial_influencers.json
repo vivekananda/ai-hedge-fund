@@ -1,0 +1,18 @@
+{
+  "channels": [
+    {
+      "name": "CNBC Television",
+      "youtube_channel_id": "UCrp_UI8XtuYfpiqluWLD7Lw",
+      "credibility_weight": 0.7,
+      "region": "US",
+      "style": "financial_news"
+    },
+    {
+      "name": "Yahoo Finance",
+      "youtube_channel_id": "UCEAZeUIeJs0IjQiqTCdVSIg",
+      "credibility_weight": 0.7,
+      "region": "US",
+      "style": "financial_news"
+    }
+  ]
+}

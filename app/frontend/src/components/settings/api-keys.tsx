@@ -20,6 +20,13 @@ const FINANCIAL_API_KEYS: ApiKey[] = [
     description: 'For getting financial data to power the hedge fund',
     url: 'https://financialdatasets.ai/',
     placeholder: 'your-financial-datasets-api-key'
+  },
+  {
+    key: 'YOUTUBE_API_KEY',
+    label: 'YouTube Data API',
+    description: 'For fetching financial influencer videos for media sentiment',
+    url: 'https://console.cloud.google.com/apis/library/youtube.googleapis.com',
+    placeholder: 'your-youtube-api-key'
   }
 ];
 

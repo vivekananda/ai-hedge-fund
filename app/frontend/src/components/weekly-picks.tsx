@@ -56,6 +56,11 @@ function getIntrinsicValue(pick: WeeklyPick) {
   return pick.analysis_details?.intrinsic_value || null;
 }
 
+function getAnalysisError(pick: WeeklyPick) {
+  const error = pick.analysis_details?.analysis_error;
+  return error?.message ? error : null;
+}
+
 function getSignalTone(signal?: string, agentName?: string): AgentSignalTone {
   const normalizedSignal = (signal || '').toLowerCase();
   const normalizedAgent = (agentName || '').toLowerCase();
@@ -1835,13 +1840,16 @@ export function WeeklyPicksDashboard() {
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               {picks.map((pick) => {
                 const isBuy = pick.signal.toLowerCase() === 'buy';
-                const rankColor = pick.rank === 1 ? 'from-amber-400 to-yellow-500' :
+                const analysisError = getAnalysisError(pick);
+                const hasAnalysisError = Boolean(analysisError);
+                const rankColor = hasAnalysisError ? 'from-rose-500 to-red-700' :
+                                  pick.rank === 1 ? 'from-amber-400 to-yellow-500' :
                                   pick.rank === 2 ? 'from-slate-300 to-slate-400' :
                                   pick.rank === 3 ? 'from-amber-600 to-amber-700' : 
                                   'from-cyan-500 to-indigo-500';
                                   
                 return (
-                  <Card key={pick.symbol} className="group bg-ramp-grey-900/95 border-ramp-grey-800 text-white shadow-xl hover:border-cyan-500/30 hover:shadow-cyan-950/20 transition-all duration-300 overflow-hidden flex flex-col">
+                  <Card key={pick.symbol} className={`group bg-ramp-grey-900/95 text-white shadow-xl transition-all duration-300 overflow-hidden flex flex-col ${hasAnalysisError ? 'border-rose-500/50 hover:border-rose-400/70 hover:shadow-rose-950/20' : 'border-ramp-grey-800 hover:border-cyan-500/30 hover:shadow-cyan-950/20'}`}>
                     {/* Glowing header showing rank & symbol */}
                     <div className="p-4 border-b border-ramp-grey-800 bg-gradient-to-r from-ramp-grey-950 via-ramp-grey-950 to-ramp-grey-900 flex items-start justify-between gap-3 flex-shrink-0">
                       <div className="flex items-center gap-3">
@@ -1885,16 +1893,41 @@ export function WeeklyPicksDashboard() {
                         </div>
                       </div>
                       <div className="flex flex-wrap justify-end items-center gap-2">
-                        <Badge variant={isBuy ? 'success' : 'warning'} className="text-xs py-0.5 px-2.5">
-                          {pick.signal.toUpperCase()}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs border-cyan-500/20 text-cyan-400 font-semibold">
-                          {pick.score}% Conv
-                        </Badge>
+                        {hasAnalysisError ? (
+                          <Badge variant="destructive" className="text-xs py-0.5 px-2.5 gap-1.5 bg-rose-500/90 text-white">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            ANALYSIS ERROR
+                          </Badge>
+                        ) : (
+                          <>
+                            <Badge variant={isBuy ? 'success' : 'warning'} className="text-xs py-0.5 px-2.5">
+                              {pick.signal.toUpperCase()}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs border-cyan-500/20 text-cyan-400 font-semibold">
+                              {pick.score}% Conv
+                            </Badge>
+                          </>
+                        )}
                       </div>
                     </div>
                     
                     {/* Thesis & metrics */}
+                    {hasAnalysisError ? (
+                      <CardContent className="p-4 flex-1 flex flex-col justify-center">
+                        <div role="alert" className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-100">
+                          <div className="flex items-start gap-3">
+                            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-400" />
+                            <div className="space-y-2">
+                              <p className="font-semibold text-rose-200">Analysis could not be completed</p>
+                              <p className="leading-relaxed text-rose-100/90">{analysisError?.message}</p>
+                              <p className="text-xs text-rose-200/75">
+                                No trading recommendation was generated. Re-run the pipeline to retry this stock.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    ) : (
                     <CardContent className="p-4 flex-1 flex flex-col justify-between gap-4">
                       {/* Horizontal stats grid */}
                       {(() => {
@@ -2048,6 +2081,7 @@ export function WeeklyPicksDashboard() {
                         </Button>
                       </div>
                     </CardContent>
+                    )}
                   </Card>
                 );
               })}

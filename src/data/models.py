@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import Any
+from typing_extensions import Literal
 
 
 
@@ -150,10 +151,44 @@ class CompanyNews(BaseModel):
     date: str
     url: str
     sentiment: str | None = None
+    text: str | None = None
 
 
 class CompanyNewsResponse(BaseModel):
     news: list[CompanyNews]
+
+
+class MediaSentimentItem(BaseModel):
+    ticker: str
+    source_type: Literal["news", "youtube"]
+    source: str
+    title: str
+    url: str
+    published_at: str
+    author: str | None = None
+    text: str | None = None
+    sentiment: Literal["positive", "negative", "neutral"] | None = None
+    confidence: int | None = None
+    relevance_score: int | None = None
+    impact_horizon: Literal["short", "medium", "long"] | None = None
+    source_weight: float = 1.0
+    key_claims: list[str] | None = None
+    risks: list[str] | None = None
+
+
+class YouTubeVideo(BaseModel):
+    ticker: str
+    video_id: str
+    title: str
+    channel_title: str
+    channel_id: str | None = None
+    published_at: str
+    url: str
+    description: str | None = None
+    transcript: str | None = None
+    view_count: int | None = None
+    like_count: int | None = None
+    source_weight: float = 0.6
 
 
 class CompanyFacts(BaseModel):

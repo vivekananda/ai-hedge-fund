@@ -13,6 +13,9 @@ class TestCacheInit:
         assert cache.get_line_items("AAPL") is None
         assert cache.get_insider_trades("AAPL") is None
         assert cache.get_company_news("AAPL") is None
+        assert cache.get_article_text("https://example.com/a") is None
+        assert cache.has_article_text("https://example.com/a") is False
+        assert cache.get_youtube_videos("AAPL") is None
 
 
 class TestGetCache:
@@ -149,10 +152,44 @@ class TestCompanyNewsCache:
         cache.set_company_news("AAPL", news)
         assert cache.get_company_news("AAPL") == news
 
-    def test_deduplicates_by_date(self):
+    def test_deduplicates_by_url(self):
         cache = Cache()
-        cache.set_company_news("AAPL", [{"date": "2024-01-01", "title": "Earnings Beat"}])
-        cache.set_company_news("AAPL", [{"date": "2024-01-01", "title": "Duplicate"}, {"date": "2024-01-02", "title": "New Product"}])
+        cache.set_company_news("AAPL", [{"date": "2024-01-01", "title": "Earnings Beat", "url": "https://example.com/a"}])
+        cache.set_company_news("AAPL", [{"date": "2024-01-01", "title": "Duplicate", "url": "https://example.com/a"}, {"date": "2024-01-01", "title": "New Product", "url": "https://example.com/b"}])
         result = cache.get_company_news("AAPL")
         assert len(result) == 2
         assert result[0]["title"] == "Earnings Beat"  # original preserved
+
+
+class TestArticleTextCache:
+    """Test extracted article text caching."""
+
+    def test_set_and_get_article_text(self):
+        cache = Cache()
+        cache.set_article_text("https://example.com/a", "Article body")
+        assert cache.get_article_text("https://example.com/a") == "Article body"
+        assert cache.has_article_text("https://example.com/a") is True
+
+    def test_caches_article_text_miss(self):
+        cache = Cache()
+        cache.set_article_text("https://example.com/missing", None)
+        assert cache.get_article_text("https://example.com/missing") is None
+        assert cache.has_article_text("https://example.com/missing") is True
+
+
+class TestYouTubeVideosCache:
+    """Test YouTube video caching."""
+
+    def test_set_and_get(self):
+        cache = Cache()
+        videos = [{"video_id": "abc123", "title": "AAPL analysis"}]
+        cache.set_youtube_videos("AAPL", videos)
+        assert cache.get_youtube_videos("AAPL") == videos
+
+    def test_deduplicates_by_video_id(self):
+        cache = Cache()
+        cache.set_youtube_videos("AAPL", [{"video_id": "abc123", "title": "Original"}])
+        cache.set_youtube_videos("AAPL", [{"video_id": "abc123", "title": "Duplicate"}, {"video_id": "def456", "title": "New"}])
+        result = cache.get_youtube_videos("AAPL")
+        assert len(result) == 2
+        assert result[0]["title"] == "Original"

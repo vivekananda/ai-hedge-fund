@@ -7,6 +7,8 @@ class Cache:
         self._line_items_cache: dict[str, list[dict[str, any]]] = {}
         self._insider_trades_cache: dict[str, list[dict[str, any]]] = {}
         self._company_news_cache: dict[str, list[dict[str, any]]] = {}
+        self._article_text_cache: dict[str, str | None] = {}
+        self._youtube_videos_cache: dict[str, list[dict[str, any]]] = {}
 
     def _merge_data(self, existing: list[dict] | None, new_data: list[dict], key_field: str) -> list[dict]:
         """Merge existing and new data, avoiding duplicates based on a key field."""
@@ -59,7 +61,27 @@ class Cache:
 
     def set_company_news(self, ticker: str, data: list[dict[str, any]]):
         """Append new company news to cache."""
-        self._company_news_cache[ticker] = self._merge_data(self._company_news_cache.get(ticker), data, key_field="date")
+        self._company_news_cache[ticker] = self._merge_data(self._company_news_cache.get(ticker), data, key_field="url")
+
+    def get_article_text(self, url: str) -> str | None:
+        """Get cached extracted article text."""
+        return self._article_text_cache.get(url)
+
+    def has_article_text(self, url: str) -> bool:
+        """Return whether article extraction has been attempted for a URL."""
+        return url in self._article_text_cache
+
+    def set_article_text(self, url: str, text: str | None):
+        """Cache extracted article text, including misses."""
+        self._article_text_cache[url] = text
+
+    def get_youtube_videos(self, key: str) -> list[dict[str, any]] | None:
+        """Get cached YouTube video data if available."""
+        return self._youtube_videos_cache.get(key)
+
+    def set_youtube_videos(self, key: str, data: list[dict[str, any]]):
+        """Append new YouTube video data to cache."""
+        self._youtube_videos_cache[key] = self._merge_data(self._youtube_videos_cache.get(key), data, key_field="video_id")
 
 
 # Global cache instance

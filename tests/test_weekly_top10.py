@@ -95,6 +95,39 @@ def _stock(symbol, market_cap):
     )
 
 
+def test_complete_candidate_decisions_keeps_symbols_missing_from_agent_output():
+    complete_decisions, missing_symbols = weekly_top10._complete_candidate_decisions(
+        ["AAA.NS", "BBB.NS", "CCC.NS"],
+        {
+            "AAA.NS": {
+                "action": "buy",
+                "confidence": 85,
+                "risk_score": 3.0,
+                "reasoning": "Strong setup",
+            },
+            "UNREQUESTED.NS": {"action": "buy"},
+        },
+        {"CCC.NS": "The qualitative analysis request timed out."},
+    )
+
+    assert list(complete_decisions) == ["AAA.NS", "BBB.NS", "CCC.NS"]
+    assert missing_symbols == ["BBB.NS", "CCC.NS"]
+    assert complete_decisions["AAA.NS"]["action"] == "buy"
+    assert complete_decisions["BBB.NS"] == {
+        "action": "error",
+        "confidence": 0.0,
+        "risk_score": 0.0,
+        "reasoning": "The portfolio manager returned no decision for this symbol.",
+        "thesis": "Analysis error: The portfolio manager returned no decision for this symbol.",
+        "analysis_error": {
+            "message": "The portfolio manager returned no decision for this symbol.",
+            "stage": "qualitative analysis",
+            "retryable": True,
+        },
+    }
+    assert complete_decisions["CCC.NS"]["analysis_error"]["message"] == "The qualitative analysis request timed out."
+
+
 def test_weekly_pick_reviews_fallback_generates_thesis_and_risk(monkeypatch):
     def raise_llm_error(*args, **kwargs):
         raise RuntimeError("local model returned invalid JSON")
@@ -205,7 +238,7 @@ def test_extract_intrinsic_value_returns_none_when_signal_missing():
     assert weekly_top10._extract_intrinsic_value("XYZ.NS", _sample_signals()) is None
 
 
-def test_weekly_pipeline_saves_non_empty_fallback_thesis_when_decisions_have_no_thesis(monkeypatch):
+def test_weekly_pipeline_saves_analysis_errors_when_decisions_are_missing(monkeypatch):
     saved_picks = []
 
     monkeypatch.setattr(weekly_top10, "init_db", lambda: None)
@@ -242,7 +275,7 @@ def test_weekly_pipeline_saves_non_empty_fallback_thesis_when_decisions_have_no_
                     "confidence": 80,
                     "reasoning": "Portfolio manager likes the setup",
                 }
-                for ticker in tickers
+                for ticker in tickers[:1]
             },
             "analyst_signals": {
                 "technical_analyst_agent": {
@@ -298,8 +331,15 @@ def test_weekly_pipeline_saves_non_empty_fallback_thesis_when_decisions_have_no_
 
     assert len(saved_picks) == 3
     assert all(pick["thesis"] for pick in saved_picks)
-    assert all("Agent view:" in pick["thesis"] for pick in saved_picks)
-    assert all(1.0 <= pick["risk_score"] <= 10.0 for pick in saved_picks)
+
+    analyzed_pick = next(pick for pick in saved_picks if pick["symbol"] == "AAA.NS")
+    assert "Agent view:" in analyzed_pick["thesis"]
+    assert 1.0 <= analyzed_pick["risk_score"] <= 10.0
+
+    fallback_pick = next(pick for pick in saved_picks if pick["symbol"] == "BBB.NS")
+    assert fallback_pick["signal"] == "error"
+    assert fallback_pick["score"] == 0.0
+    assert "Analysis error" in fallback_pick["thesis"]
 
     import json
     for pick in saved_picks:
@@ -307,6 +347,9 @@ def test_weekly_pipeline_saves_non_empty_fallback_thesis_when_decisions_have_no_
         assert details["screen_metrics"]["sales_growth"] == 16.0
         assert details["intrinsic_value"]["intrinsic_value_per_share"] == 140.0
         assert details["intrinsic_value"]["margin_of_safety"] == 0.4
+
+    fallback_details = json.loads(fallback_pick["analysis_details"])
+    assert fallback_details["analysis_error"]["retryable"] is True
 
 
 
